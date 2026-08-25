@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.vercel/
+*.local
+.env
+.env.*
+!.env.example
+local.db
+local.db-journal
+local.db-wal
+local.db-shm
