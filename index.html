@@ -192,6 +192,48 @@ tbody tr:last-child td{border-bottom:none}
 .hits.h3{background:var(--crit); color:#fff}
 .exp{font-family:"IBM Plex Mono",monospace; color:var(--muted); font-size:.88rem}
 
+/* fraud confirm tick */
+th.tickhead{cursor:default; color:var(--crit)}
+th.tickhead:hover{color:var(--crit)}
+td.tickcell{width:1%; white-space:nowrap; text-align:center}
+.tick{appearance:none; -webkit-appearance:none; width:20px; height:20px; margin:0;
+  border:1.5px solid var(--line-2); border-radius:3px; background:var(--surface);
+  cursor:pointer; display:inline-grid; place-content:center; vertical-align:middle;
+  transition:background .1s,border-color .1s}
+.tick:hover{border-color:var(--crit)}
+.tick:checked{background:var(--crit); border-color:var(--crit)}
+.tick:checked::after{content:"\2713"; color:#fff; font-size:13px; font-weight:700; line-height:1}
+.tick:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+tr.row.confirmed td{background:var(--crit-bg)}
+tr.row.confirmed .pid{color:var(--crit)}
+
+.reviewbar{display:flex; flex-wrap:wrap; gap:12px 18px; align-items:center;
+  margin-top:14px; padding:14px 18px; background:var(--surface); border:1px solid var(--line);
+  border-left:4px solid var(--crit); border-radius:3px; box-shadow:var(--shadow)}
+.reviewbar.zero{border-left-color:var(--line-2)}
+.rvn{font-family:"Archivo",sans-serif; font-size:1.55rem; font-weight:700; line-height:1;
+  color:var(--crit); font-variant-numeric:tabular-nums}
+.reviewbar.zero .rvn{color:var(--muted)}
+.rvt{font-size:.88rem; color:var(--ink-2); flex:1 1 240px}
+.rvt b{color:var(--ink)}
+.rvbtn{font-family:"Public Sans",sans-serif; font-size:.85rem; font-weight:600;
+  background:var(--surface-2); border:1px solid var(--line-2); color:var(--ink-2);
+  padding:8px 14px; border-radius:3px; cursor:pointer}
+.rvbtn:hover:not(:disabled){border-color:var(--accent); color:var(--accent)}
+.rvbtn:disabled{opacity:.4; cursor:default}
+.rvbtn.danger:hover:not(:disabled){border-color:var(--crit); color:var(--crit)}
+.rvbtn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+.rvmsg{font-family:"IBM Plex Mono",monospace; font-size:.78rem; color:var(--pos)}
+.rvfall{margin-top:10px; padding:15px 18px; background:var(--surface-2);
+  border:1px solid var(--line-2); border-radius:3px}
+.rvfall p{margin:0 0 10px; font-size:.86rem; color:var(--ink-2)}
+.rvfall p b{color:var(--ink); font-family:"IBM Plex Mono",monospace; font-size:.82rem}
+.rvfall textarea{width:100%; font-family:"IBM Plex Mono",monospace; font-size:.76rem;
+  line-height:1.6; color:var(--ink); background:var(--surface); border:1px solid var(--line-2);
+  border-radius:3px; padding:10px 12px; resize:vertical; margin-bottom:10px;
+  white-space:pre; overflow-x:auto}
+.rvfall textarea:focus{outline:2px solid var(--accent); outline-offset:-1px}
+
 /* detail */
 tr.detail td{background:var(--surface-2); border-bottom:2px solid var(--line-2); padding:0}
 .dwrap{padding:19px 21px; display:grid; gap:19px;
@@ -574,6 +616,63 @@ function num(n){
 function fmt(v, money){ return money ? inr(v) : num(v); }
 function cls(v){ return typeof v==="number" ? (v>0?"pos":(v<0?"neg":"")) : ""; }
 
+/* ---------- "Fraud confirm" tick — browser me save hota hai ----------
+   Tick PLAYER ke saath judta hai (rule ke saath nahi), isliye ek jagah tick karo
+   to har rule tab me wahi player ticked dikhega.                              */
+var LS_KEY = "miraigate_fraud_confirmed_v1";
+function loadTicks(){
+  try{
+    var raw = window.localStorage.getItem(LS_KEY);
+    if(!raw) return {};
+    var o = {}, arr = JSON.parse(raw);
+    if(Object.prototype.toString.call(arr)!=="[object Array]") return {};
+    arr.forEach(function(x){ o[x] = 1; });
+    return o;
+  }catch(e){ return {}; }
+}
+function saveTicks(o){
+  try{ window.localStorage.setItem(LS_KEY, JSON.stringify(Object.keys(o))); }catch(e){}
+}
+function tickedRows(ticks){
+  var seen = {}, out = [];
+  RULES.forEach(function(r){
+    r.rows.forEach(function(x){
+      if(ticks[x.id] && !seen[x.id]){ seen[x.id] = 1; out.push(x); }
+    });
+  });
+  return out;
+}
+function ticksAsTSV(ticks){
+  var head = ["User ID","User Code","Name","Account created","Account age (days)",
+              "Naya (<30 din)","Rules toote"].join("\t");
+  var lines = tickedRows(ticks).map(function(x){
+    return [x.id, x.c, x.n, x.cr, x.a, x.nw?"haan":"nahi", x.hits.join(" ")].join("\t");
+  });
+  return [head].concat(lines).join("\n");
+}
+function copyText(text){
+  return new Promise(function(res, rej){
+    function legacy(){
+      try{
+        var ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.cssText = "position:fixed;left:-9999px;top:0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        var ok = document.execCommand("copy");
+        ta.remove();
+        ok ? res() : rej(new Error("execCommand ne mana kar diya"));
+      }catch(e){ rej(e); }
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(res, legacy);
+    }else{
+      legacy();
+    }
+  });
+}
+
 /* ---------- small pieces ---------- */
 function Stat(p){
   return h`<div className=${"stat"+(p.hl?" hl":"")}>
@@ -602,6 +701,50 @@ function WLStrip(p){
     <code>${out.map(function(seg,i){
       return seg[0]==="W" ? h`<b key=${i}>${seg[1]}</b>` : h`<i key=${i}>${seg[1]}</i>`;
     })}</code></div>`;
+}
+
+function ReviewBar(p){
+  var n = Object.keys(p.ticks).length;
+  var st = useState(""), msg=st[0], setMsg=st[1];
+  var s2 = useState(""), fallback=s2[0], setFallback=s2[1];
+  function say(t){ setMsg(t); setTimeout(function(){ setMsg(""); }, 3000); }
+
+  return h`<div className="reviewwrap">
+    <div className=${"reviewbar"+(n===0?" zero":"")}>
+      <span className="rvn">${num(n)}</span>
+      <span className="rvt">
+        ${n===0
+          ? h`<${React.Fragment}>Abhi tak kisi player ko <b>fraud confirm</b> nahi kiya.
+              Table ke aakhri column me tick karke mark kijiye.<//>`
+          : h`<${React.Fragment}>players <b>fraud confirm</b> ho chuke hain.
+              Ye tick isi browser me save hai — reload karne par bhi rahega.<//>`}
+      </span>
+      ${msg ? h`<span className="rvmsg">${msg}</span>` : null}
+      <button className="rvbtn" disabled=${n===0} onClick=${function(){
+        var tsv = ticksAsTSV(p.ticks);
+        setFallback("");
+        copyText(tsv)
+          .then(function(){ say("✓ " + n + " players copy ho gaye"); })
+          .catch(function(){
+            setFallback(tsv);
+            say("clipboard block hai — neeche se copy kijiye");
+          });
+      }}>Confirmed list copy karo</button>
+      <button className="rvbtn danger" disabled=${n===0} onClick=${function(){
+        if(window.confirm("Saare " + n + " ticks hata dein? Ye wapas nahi aayenge.")){
+          setFallback("");
+          p.clear();
+        }
+      }}>Sab ticks hatao</button>
+    </div>
+    ${fallback ? h`<div className="rvfall">
+      <p>Browser ne clipboard block kar diya. Neeche wale box me click karke
+        <b>Ctrl+A</b> phir <b>Ctrl+C</b> dabaiye — Excel me seedha paste ho jayega.</p>
+      <textarea readOnly value=${fallback} rows="8"
+        onFocus=${function(e){ e.target.select(); }}></textarea>
+      <button className="rvbtn" onClick=${function(){ setFallback(""); }}>Band karo</button>
+    </div>` : null}
+  </div>`;
 }
 
 /* ---------- overview ---------- */
@@ -661,9 +804,11 @@ function RulePanel(p){
   var s5 = useState({k:"metric", dir:-1}), sort=s5[0], setSort=s5[1];
   var s6 = useState(0), page=s6[0], setPage=s6[1];
   var s7 = useState(null), open=s7[0], setOpen=s7[1];
+  var s8 = useState(false), tickOnly=s8[0], setTickOnly=s8[1];
+  var ticks = p.ticks;
 
   useEffect(function(){ setQ(""); setNewOnly(false); setMultiOnly(false); setMinM(0);
-    setSort({k:"metric",dir:-1}); setPage(0); setOpen(null); }, [r.id]);
+    setTickOnly(false); setSort({k:"metric",dir:-1}); setPage(0); setOpen(null); }, [r.id]);
 
   var metricMax = useMemo(function(){
     if(mi<0) return 0;
@@ -677,6 +822,7 @@ function RulePanel(p){
          && String(x.id).indexOf(qq)<0) return false;
       if(newOnly && !x.nw) return false;
       if(multiOnly && x.hits.length<2) return false;
+      if(tickOnly && !ticks[x.id]) return false;
       if(minM>0 && mi>=0 && !(typeof x.v[mi]==="number" && x.v[mi]>=minM)) return false;
       return true;
     });
@@ -693,9 +839,9 @@ function RulePanel(p){
       if(av<bv) return -dir; if(av>bv) return dir; return 0;
     });
     return out;
-  },[r.id,q,newOnly,multiOnly,minM,sort]);
+  },[r.id,q,newOnly,multiOnly,tickOnly,minM,sort,ticks]);
 
-  useEffect(function(){ setPage(0); setOpen(null); },[q,newOnly,multiOnly,minM,sort]);
+  useEffect(function(){ setPage(0); setOpen(null); },[q,newOnly,multiOnly,tickOnly,minM,sort]);
 
   var pages = Math.max(1, Math.ceil(rows.length/PAGE));
   var pg = Math.min(page, pages-1);
@@ -751,9 +897,12 @@ function RulePanel(p){
       <div className="fgroup"><span className="flab">Rules</span>
         <button className="chip" aria-pressed=${multiOnly?"true":"false"}
           onClick=${function(){setMultiOnly(!multiOnly);}}>2+ rules toote</button></div>
+      <div className="fgroup"><span className="flab">Review</span>
+        <button className="chip" aria-pressed=${tickOnly?"true":"false"}
+          onClick=${function(){setTickOnly(!tickOnly);}}>Sirf ticked dikhao</button></div>
       <div className="fgroup"><span className="flab">${" "}</span>
         <button className="reset" onClick=${function(){
-          setQ(""); setNewOnly(false); setMultiOnly(false); setMinM(0);
+          setQ(""); setNewOnly(false); setMultiOnly(false); setTickOnly(false); setMinM(0);
         }}>Filters hatayein</button></div>
     </div>
 
@@ -771,14 +920,15 @@ function RulePanel(p){
         ${vi>=0 ? th("money", r.money, true) : null}
         ${th("hits","Rules", true)}
         <th className="r"></th>
+        <th className="tickhead r">Fraud confirm</th>
       </tr></thead>
       <tbody>
-        ${slice.length===0 ? h`<tr><td colSpan="6"><div className="empty">
+        ${slice.length===0 ? h`<tr><td colSpan="7"><div className="empty">
             <b>Koi player nahi mila</b>Filters thode dheele karke dekhiye.</div></td></tr>` : null}
         ${slice.map(function(x){
           var isOpen = open===x.id;
           var frag = [
-            h`<tr key=${x.id} className=${"row"+(isOpen?" open":"")}
+            h`<tr key=${x.id} className=${"row"+(isOpen?" open":"")+(ticks[x.id]?" confirmed":"")}
               onClick=${function(){ setOpen(isOpen?null:x.id); }}>
               <td><span className="pid">${x.c}</span><span className="pname">${x.n}</span>
                 ${x.nw ? h`<span className="newpill">NAYA ACCOUNT</span>` : null}</td>
@@ -792,11 +942,15 @@ function RulePanel(p){
                   ${x.hits.length}</span>
                 ${x.hits.length>1 ? h`<${HitPills} hits=${x.hits} self=${r.id} />` : null}</td>
               <td className="r exp">${isOpen?"−":"+"}</td>
+              <td className="tickcell" onClick=${function(e){ e.stopPropagation(); }}>
+                <input type="checkbox" className="tick" checked=${!!ticks[x.id]}
+                  aria-label=${"Fraud confirm karo: "+x.c}
+                  onChange=${function(){ p.toggle(x.id); }} /></td>
             </tr>`
           ];
           if(isOpen){
             var wlIdx = r.cols.findIndex(function(c){return c.l==="W/L pattern";});
-            frag.push(h`<tr key=${x.id+"-d"} className="detail"><td colSpan="6"><div className="dwrap">
+            frag.push(h`<tr key=${x.id+"-d"} className="detail"><td colSpan="7"><div className="dwrap">
               <div className="dgrp"><h4>Player</h4><dl>
                 <dt>User ID</dt><dd>${x.id}</dd>
                 <dt>User code</dt><dd>${x.c}</dd>
@@ -843,6 +997,26 @@ function App(){
   useEffect(function(){ window.scrollTo({top:0,behavior:"instant"}); },[tab]);
   var rule = RULES.filter(function(r){return r.id===tab;})[0];
 
+  var t = useState(loadTicks), ticks=t[0], setTicks=t[1];
+
+  /* doosre browser tab me tick lage to yahan bhi update ho jaye */
+  useEffect(function(){
+    function sync(e){ if(e.key === LS_KEY) setTicks(loadTicks()); }
+    window.addEventListener("storage", sync);
+    return function(){ window.removeEventListener("storage", sync); };
+  },[]);
+
+  function toggle(id){
+    setTicks(function(prev){
+      var next = {}, k;
+      for(k in prev) if(prev[k]) next[k] = 1;
+      if(next[id]) delete next[id]; else next[id] = 1;
+      saveTicks(next);
+      return next;
+    });
+  }
+  function clearTicks(){ saveTicks({}); setTicks({}); }
+
   return h`<${React.Fragment}>
     <header>
       <p className="eyebrow">${META.org} · Fraud Detection</p>
@@ -856,6 +1030,7 @@ function App(){
         <${Stat} n=${META.rules} l="<b>rules</b> jo is data par chal sakte the" />
         <${Stat} hl=${true} n=${num(META.multi)} l="players <b>2 ya zyada rules</b> tod rahe hain — sabse pakke case" />
       </div>
+      <${ReviewBar} ticks=${ticks} clear=${clearTicks} />
       <div className="tabs" role="tablist">
         <button role="tab" aria-selected=${tab==="OV"?"true":"false"}
           onClick=${function(){setTab("OV");}}>Overview</button>
@@ -867,7 +1042,9 @@ function App(){
       </div>
     </header>
 
-    ${tab==="OV" ? h`<${Overview} go=${setTab} />` : h`<${RulePanel} key=${tab} rule=${rule} />`}
+    ${tab==="OV"
+      ? h`<${Overview} go=${setTab} />`
+      : h`<${RulePanel} key=${tab} rule=${rule} ticks=${ticks} toggle=${toggle} />`}
 
     <div className="note">
       <h3>Ek zaroori baat</h3>
@@ -880,6 +1057,11 @@ function App(){
       <p>Rule ka apna profit aur player ka <strong>overall ${"P&L"} alag cheezein hain</strong>.
         Rule ka profit sirf us market/session ka hai. Dono column me diye hain — faisla
         dono dekhkar lijiye.</p>
+      <p><strong>"Fraud confirm" tick isi browser me save hota hai</strong> — reload aur
+        band karne par bhi rahega, par doosre laptop ya doosre browser me nahi dikhega.
+        Tick player ke saath juda hai, rule ke saath nahi: ek jagah tick karoge to har
+        rule tab me wahi player ticked milega. Kaam khatam hone par upar
+        <strong>"Confirmed list copy karo"</strong> se poori list nikaal lijiye.</p>
     </div>
 
     <footer>
