@@ -1,11 +1,11 @@
 /**
- * Local dev API — `vercel dev` ke bina bhi /api/ticks chalane ke liye.
+ * Local dev API — runs /api/ticks without `vercel dev`.
  *
  *   npm run dev:api      (port 3001)
- *   npm run dev          (Vite 5173, /api ko 3001 par proxy karta hai)
+ *   npm run dev          (Vite on 5173, proxies /api to 3001)
  *
- * Vercel par ye file kabhi nahi chalti — wahan api/ticks.js seedhe serverless
- * function ban jata hai. Logic dono jagah ek hi hai.
+ * This file never runs on Vercel; there api/ticks.js becomes a serverless function
+ * directly. The logic is the same in both places.
  */
 import http from "node:http";
 import fs from "node:fs";
@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..");
 
-/* .env padho (chhota loader — dotenv dependency se bachne ke liye) */
+/* read .env (a small loader, to avoid the dotenv dependency) */
 const envFile = path.join(ROOT, ".env");
 if (fs.existsSync(envFile)) {
   for (const line of fs.readFileSync(envFile, "utf8").split(/\r?\n/)) {

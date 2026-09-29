@@ -1,9 +1,9 @@
 {
-  "name": "fraud-console",
+  "name": "fraud-detection",
   "private": true,
-  "version": "2.0.0",
+  "version": "3.0.0",
   "type": "module",
-  "description": "MiraiGate — Seven Rules Fraud Console (React + libSQL/SQLite)",
+  "description": "MiraiGate — Fraud Detection dashboard (Vite + libSQL/SQLite for confirmed-fraud ticks)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -13,12 +13,9 @@
     "dev:all": "node scripts/dev-api.js & vite"
   },
   "dependencies": {
-    "@libsql/client": "^0.15.9",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "@libsql/client": "^0.15.9"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.4",
     "vite": "^6.0.7"
   }
 }

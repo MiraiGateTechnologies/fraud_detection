@@ -1,14 +1,13 @@
 /**
- * /api/ticks — "Fraud confirm" ticks ka store.
+ * /api/ticks — store for "Confirmed fraud" ticks.
  *
  *   GET     -> { ok, persistent, ticks: [...] }
- *   POST    -> body { userId, userCode, name, on, markedBy }   tick lagao / hatao
- *   DELETE  -> saare ticks hatao
+ *   POST    -> body { userId, userCode, name, on, markedBy }   add or remove a tick
+ *   DELETE  -> remove all ticks
  *
- * Jaan-boojhkar bahar kuch nahi batate: kaunsa database hai, URL kya hai, login
- * laga hai ya nahi, ya SQL ka asli error — kuch bhi response me nahi jaata.
- * Client ko sirf itna pata chalta hai ki tick permanently save hua ya nahi.
- * Asli error server log me jaata hai (Vercel -> Logs).
+ * On purpose, responses reveal nothing about the setup: not the database type or URL,
+ * not whether login is on, and not the real SQL error. The client only learns whether
+ * a tick was saved permanently. The real error goes to the server log (Vercel -> Logs).
  */
 import { getClient, ensureSchema, dbMode, readBody } from "./_db.js";
 
@@ -20,7 +19,7 @@ export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
   if (dbMode() === "none") {
-    // DB configure nahi hai -> app localStorage par chalta rahega
+    // No database configured -> the page keeps working with browser-only ticks
     res.status(200).json({ ok: false, persistent: false, ticks: [] });
     return;
   }
@@ -78,7 +77,7 @@ export default async function handler(req, res) {
     res.setHeader("Allow", "GET, POST, DELETE");
     fail(res, 405);
   } catch (e) {
-    // detail sirf server log me — response me nahi
+    // details go to the server log only, never to the response
     console.error("[/api/ticks]", req.method, e);
     fail(res, 500);
   }

@@ -1,15 +1,15 @@
 /**
- * Vercel Edge Middleware — poori site par Basic Auth.
+ * Vercel Edge Middleware — Basic Auth for the whole site.
  *
- * Vercel ka apna "Password Protection" Pro plan ka feature hai. Ye wahi kaam
- * free Hobby plan par kar deta hai.
+ * Vercel's own "Password Protection" is a Pro plan feature. This does the same job
+ * on the free Hobby plan.
  *
- * Chalane ke liye Vercel me do env vars set karo:
+ * Set two environment variables in Vercel:
  *     BASIC_AUTH_USER
  *     BASIC_AUTH_PASS
  *
- * Dono set nahi honge to middleware kuch nahi rokega aur site BINA PASSWORD ke
- * khulegi — us soorat me dashboard par laal banner dikhta hai.
+ * If either is missing, the middleware lets every request through and the site opens
+ * WITHOUT a password.
  */
 export const config = {
   matcher: "/((?!_vercel|favicon\\.ico).*)",
@@ -19,7 +19,7 @@ export default function middleware(request) {
   const USER = process.env.BASIC_AUTH_USER;
   const PASS = process.env.BASIC_AUTH_PASS;
 
-  // Env set nahi -> aage jaane do (app khud banner dikha dega)
+  // Not configured -> let the request through
   if (!USER || !PASS) return;
 
   const header = request.headers.get("authorization") || "";
@@ -38,14 +38,14 @@ export default function middleware(request) {
     if (i > -1) {
       const u = decoded.slice(0, i);
       const p = decoded.slice(i + 1);
-      if (timingSafeEqual(u, USER) && timingSafeEqual(p, PASS)) return; // andar jaane do
+      if (timingSafeEqual(u, USER) && timingSafeEqual(p, PASS)) return; // allow
     }
   }
 
-  return new Response("Login zaroori hai.", {
+  return new Response("Login required.", {
     status: 401,
     headers: {
-      "WWW-Authenticate": 'Basic realm="MiraiGate Fraud Console", charset="UTF-8"',
+      "WWW-Authenticate": 'Basic realm="MiraiGate Fraud Detection", charset="UTF-8"',
       "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-store",
     },

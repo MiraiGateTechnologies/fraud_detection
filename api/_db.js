@@ -1,13 +1,13 @@
 /**
- * SQLite connection — libSQL client ke through.
+ * SQLite connection through the libSQL client.
  *
- * Ek hi code do jagah chalta hai:
- *   LOCAL   DATABASE_URL=file:local.db          -> asli SQLite file disk par
+ * The same code runs in two places:
+ *   LOCAL   DATABASE_URL=file:local.db          -> a real SQLite file on disk
  *   VERCEL  DATABASE_URL=libsql://...turso.io   -> Turso (hosted SQLite)
  *           DATABASE_AUTH_TOKEN=...
  *
- * Vercel par seedhi file isliye nahi chalti kyunki uska filesystem har
- * request/deploy par reset ho jata hai — ticks ud jate.
+ * A plain file does not work on Vercel because its filesystem is reset on every
+ * request and deploy, so the ticks would be lost.
  */
 import { createClient } from "@libsql/client";
 
@@ -32,7 +32,7 @@ export function getClient() {
   return client;
 }
 
-/** Table pehli baar me bana deta hai. Baar-baar call karna safe hai. */
+/** Creates the table the first time. Safe to call repeatedly. */
 export function ensureSchema() {
   const db = getClient();
   if (!db) return Promise.resolve(false);
@@ -52,7 +52,7 @@ export function ensureSchema() {
       );
       return true;
     })().catch((e) => {
-      schemaReady = null; // agli baar dobara koshish ho sake
+      schemaReady = null; // allow a retry next time
       throw e;
     });
   }
@@ -60,7 +60,7 @@ export function ensureSchema() {
 }
 
 
-/** Vercel body de deta hai; local/raw case ke liye fallback. */
+/** Vercel provides the parsed body; this is the fallback for local/raw requests. */
 export async function readBody(req) {
   if (req.body && typeof req.body === "object") return req.body;
   if (typeof req.body === "string") {

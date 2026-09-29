@@ -1,4 +1,4 @@
--- Fraud confirm ticks. Ek player = ek row.
+-- Confirmed fraud ticks. One player = one row (keyed by the platform's numeric user ID).
 CREATE TABLE IF NOT EXISTS ticks (
   user_id   INTEGER PRIMARY KEY,
   user_code TEXT,

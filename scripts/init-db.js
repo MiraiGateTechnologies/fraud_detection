@@ -1,4 +1,4 @@
-/** Table bana deta hai aur ginti dikhata hai. `npm run db:init` */
+/** Creates the ticks table and prints the number of ticks. `npm run db:init` */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
