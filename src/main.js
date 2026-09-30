@@ -2,8 +2,9 @@
  * Fraud Detection dashboard.
  *
  * Loads public/data/dashboard.json (built by the fraud scoring pipeline) and renders three views:
- * Section 1 (risk events from 15 Sep), Section 2 (Newdata folder, July) and Model and accuracy.
+ * Section 1 (risk events from 15 Sep), Section 2 (old data, July) and Model and accuracy.
  * The "Confirmed fraud" tick in the last table column is saved through /api/ticks (see src/ticks.js).
+ * Generated from the dashboard template by fraud_score/5_github_dashboard.py — change the template, not this file.
  */
 import "./styles.css";
 import { createTicks, loadReviewer, saveReviewer } from "./ticks.js";
@@ -27,16 +28,19 @@ function init(D) {
   const rs = n => n == null ? "–" : "₹" + nf.format(n);
   const esc = s => s == null ? "" : String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
   const dic = (k, i) => i >= 0 ? DC[k][i] : "";
-  const bk = p => p == null ? "b0" : p >= 80 ? "b80" : p >= 60 ? "b60" : p >= 40 ? "b40" : p >= 20 ? "b20" : "b0";
+  const bk = p => p == null ? "b0" : p >= 90 ? "b90" : p >= 60 ? "b60" : p >= 40 ? "b40" : p >= 20 ? "b20" : "b0";
   const pill = p => `<span class="fp ${bk(p)}">${p == null ? "–" : Math.round(p) + "%"}</span>`;
   const plural = (n, one, many) => fmt(n) + " " + (n === 1 ? one : many);
   const pct1 = (a, b) => (100 * a / Math.max(1, b)).toFixed(1);
   const ageTxt = d => d == null ? "–" : d < 1 ? plural(Math.max(1, Math.round(d * 24)), "hour", "hours") : d < 10 ? d.toFixed(1) + " days" : fmt(Math.round(d)) + " days";
   const isNew = d => d != null && d < 7;
   const ageCell = d => (isNew(d) ? '<span class="tag new">New</span> ' : "") + `<span class="mono">${ageTxt(d)}</span>`;
-  const mult = x => x == null ? "–" : x + "x";
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const shortDate = s => { const [d, t] = String(s).split(" "), p = d.split("-"); return p.length === 3 ? `${+p[2]} ${MON[+p[1] - 1]} ${t || ""}`.trim() : s; };
+  const money = n => n == null ? "–" : (n < 0 ? "−₹" : "₹") + nf.format(Math.abs(n));
+  const moneyCell = n => `<span class="mono${n != null && n < 0 ? " negv" : ""}">${money(n)}</span>`;
   const reasons = s => s ? s.split("; ").map(x => `<span class="rsn">${esc(x)}</span>`).join("") : "";
-  const oldNote = d => d != null && d > D.old.days ? `<br><b>Account older than ${D.old.days} days:</b> the score was lowered. It can reach 80% or more only with a strong known-pattern match (pattern score ${D.old.p80_old} or higher).` : "";
+  const oldNote = d => d != null && d > D.old.days ? `<br><b>Account older than ${D.old.days} days:</b> the score was lowered. An older account is shown at 90% or more only when the case is very strong, and then only between ${D.old.min}% and ${D.old.max}%.` : "";
   const TK = createTicks(onTicks);
   const tickNote = id => { const t = id != null && TK.get(id); return t ? `<br><b>Confirmed fraud:</b> marked${t.by ? " by " + esc(t.by) : ""}${t.at ? " on " + esc(t.at.slice(0, 10)) : ""}.` : ""; };
   const tickCell = (S, r) => {
@@ -55,9 +59,9 @@ function init(D) {
     withdrawals: {
       rows: D.W, pct: r => r[3], uid: r => r[24], age: r => r[19], why: r => dic("k", r[4]), one: "request", many: "requests", bands: D.band_r,
       title: "How the score works for these requests",
-      what: "Each row is one withdrawal request. The score uses only the bets and statements the user had before the request, for up to the last 30 days.",
+      what: "Each row is one withdrawal request. The score uses only the bets and statements the user had before the request, for up to the last 20 days.",
       howL: "How the score is calculated",
-      how: `The score has two parts. The first checks how closely the user matches the four known fraud patterns (P1–P4). The second checks how far the user's behaviour is from normal users, mainly when a user wins far more than they deposit. The final score is the higher of the two. Accounts older than ${D.old.days} days get a lower score, and they reach 80% or more only with a strong match to a known pattern. The ${T.fraud_n} confirmed fraud cases were scored without the model seeing them.`,
+      how: `The score has two parts. The first checks how closely the user matches the four known fraud patterns (P1–P4). The second checks how far the user's behaviour is from normal users, mainly when a user wins far more than they deposit. The higher of the two is then compared with approved requests: 90% or more means the request looks more like fraud than 999 of every 1,000 approved requests. Accounts older than ${D.old.days} days get a lower score and are shown at 90% or more only in very strong cases (${D.old.min}–${D.old.max}%). Confirmed fraud cases are always shown at ${D.model.confirmed_min}% or more.`,
       listTitle: "All withdrawal requests",
       bandSub: "How many requests fall in each band, and how many of them agents rejected. Select a band to filter the table.",
       ph: "User, master, remark or group (e.g. G24)",
@@ -66,20 +70,22 @@ function init(D) {
       cols: [
         {h: "Fraud %", r: 1, v: r => r[3], c: r => pill(r[3])},
         {h: "User", v: r => r[0], c: r => `<span class="pid">${esc(r[0])}</span><span class="pname">${esc(dic("m", r[9]))}</span>`},
-        {h: "Requested (IST)", v: r => r[1], c: r => `<span class="mono">${esc(r[1])}</span>`, cls: "nw"},
+        {h: "Requested (IST)", v: r => r[1], c: r => `<span class="mono">${esc(shortDate(r[1]))}</span>`, cls: "nw"},
         {h: "Status", v: r => r[2], c: r => r[2] ? '<span class="st rej">Rejected</span>' : '<span class="st ok">Approved</span>'},
         {h: "Main reasons", v: r => dic("k", r[4]), c: r => reasons(dic("k", r[4])), cls: "why"},
         {h: "Account age", r: 1, d0: 1, v: r => r[19], c: r => ageCell(r[19]), cls: "nw"},
         {h: "Unusual score", r: 1, v: r => r[7], c: r => `<span class="mono">${fmt(r[7])}</span>`},
         {h: "Group", v: r => r[8] || null, c: r => r[8] ? `<span class="mono">G${r[8]}</span>` : ""},
         {h: "Deposits", r: 1, v: r => r[14], c: r => `<span class="mono">${rs(r[14])}</span>`},
-        {h: "Profit ÷ deposits", r: 1, v: r => r[17], c: r => `<span class="mono">${mult(r[17])}</span>`},
+        {h: "Withdrawn", r: 1, v: r => r[17], c: r => `<span class="mono">${rs(r[17])}</span>`},
+        {h: "Profit", r: 1, v: r => r[16], c: r => moneyCell(r[16])},
       ],
       example: r => exLines([
         ["User", `${r[0]}  (master ${dic("m", r[9]) || "–"})`],
         ["Requested", `${r[1]} IST · ${r[2] ? "rejected" : "approved"}`],
         ["Deposits", `${rs(r[14])} (${plural(r[15], "deposit", "deposits")})`],
-        ["Profit", r[17] == null ? "no deposit to compare" : `${r[17]}x the deposits`],
+        ["Withdrawn", rs(r[17])],
+        ["Profit", money(r[16])],
         ["Casino", `${r[18]}% of play`],
         ["Account", `${ageTxt(r[19])} old`],
         ...(r[8] ? [["Group", "G" + r[8]]] : []),
@@ -87,10 +93,10 @@ function init(D) {
         ["Reasons", dic("k", r[4]).split("; ").join("\n           ")],
       ]),
       detail: r => `
-        <div class="dgrp"><h4>Money, last 30 days</h4><dl>
+        <div class="dgrp"><h4>Money, last 20 days</h4><dl>
           <dt>Deposits</dt><dd>${rs(r[14])} · ${plural(r[15], "deposit", "deposits")}</dd>
-          <dt>Net win or loss</dt><dd class="${r[16] >= 0 ? "pos" : "neg"}">${rs(r[16])}</dd>
-          <dt>Profit ÷ deposits</dt><dd>${mult(r[17])}</dd>
+          <dt>Withdrawn</dt><dd>${rs(r[17])}</dd>
+          <dt>Profit (win or loss)</dt><dd class="${r[16] >= 0 ? "pos" : "neg"}">${money(r[16])}</dd>
           <dt>Casino share of play</dt><dd>${r[18]}%</dd>
           <dt>Bonus</dt><dd>${rs(r[20])}</dd></dl></div>
         <div class="dgrp"><h4>Account and activity</h4><dl>
@@ -113,7 +119,7 @@ function init(D) {
     july: {
       rows: D.J, pct: r => r[2], uid: r => r[18], age: r => r[13], why: r => dic("k", r[3]), one: "user", many: "users", bands: D.band_j,
       title: "How the score works for these users",
-      what: "Each row is one user from the Newdata folder files data_pipeline_output-24, 25 and 26. Each user has about 2 days of activity.",
+      what: "Each row is one user from the old July data (files data_pipeline_output-24, 25 and 26). Each user has about 2 days of activity.",
       howL: "What is different for this data",
       how: `The same model is used, with three changes for the short time window. Unusual behaviour is checked with a 48-hour model. If no deposit appears in the window, the deposit is treated as unknown, so the no-deposit signals and pattern P4 are not applied. There is no master field, so group checks do not run. As in Section 1, accounts older than ${D.old.days} days get a lower score.`,
       listTitle: "All users",
@@ -127,17 +133,17 @@ function init(D) {
         {h: "Main reasons", v: r => dic("k", r[3]), c: r => reasons(dic("k", r[3])), cls: "why"},
         {h: "Account age", r: 1, d0: 1, v: r => r[13], c: r => ageCell(r[13]), cls: "nw"},
         {h: "Unusual score (48 h)", r: 1, v: r => r[6], c: r => `<span class="mono">${fmt(r[6])}</span>`},
-        {h: "Withdrawals", r: 1, v: r => r[7], c: r => `<span class="mono">${rs(r[7])}</span>`},
+        {h: "Withdrawn", r: 1, v: r => r[7], c: r => `<span class="mono">${rs(r[7])}</span>`},
         {h: "Deposits", r: 1, v: r => r[8], c: r => `<span class="mono">${rs(r[8])}</span>`},
-        {h: "Profit ÷ deposits", r: 1, v: r => r[11], c: r => `<span class="mono">${mult(r[11])}</span>`},
+        {h: "Profit", r: 1, v: r => r[10], c: r => moneyCell(r[10])},
         {h: "Casino share", r: 1, v: r => r[12], c: r => `<span class="mono">${r[12]}%</span>`},
         {h: "Client rules", v: r => dic("ru", r[17]) || null, c: r => `<span class="mono">${esc(dic("ru", r[17]))}</span>`},
       ],
       example: r => exLines([
         ["User", `${r[0]}  (file ${r[1]})`],
         ["Deposits", `${rs(r[8])} (${plural(r[9], "deposit", "deposits")})`],
-        ["Withdrew", rs(r[7])],
-        ["Profit", r[11] == null ? "no deposit to compare" : `${r[11]}x the deposits`],
+        ["Withdrawn", rs(r[7])],
+        ["Profit", money(r[10])],
         ["Casino", `${r[12]}% of play`],
         ["Account", `${ageTxt(r[13])} old`],
         ["Fraud %", Math.round(r[2]) + "%"],
@@ -146,9 +152,8 @@ function init(D) {
       detail: r => `
         <div class="dgrp"><h4>Money, about 2 days</h4><dl>
           <dt>Deposits</dt><dd>${rs(r[8])} · ${plural(r[9], "deposit", "deposits")}</dd>
-          <dt>Withdrawals</dt><dd>${rs(r[7])}</dd>
-          <dt>Net win or loss</dt><dd class="${r[10] >= 0 ? "pos" : "neg"}">${rs(r[10])}</dd>
-          <dt>Profit ÷ deposits</dt><dd>${mult(r[11])}</dd>
+          <dt>Withdrawn</dt><dd>${rs(r[7])}</dd>
+          <dt>Profit (win or loss)</dt><dd class="${r[10] >= 0 ? "pos" : "neg"}">${money(r[10])}</dd>
           <dt>Casino share of play</dt><dd>${r[12]}%</dd>
           <dt>Bonus</dt><dd>${rs(r[14])}</dd></dl></div>
         <div class="dgrp"><h4>Account and activity</h4><dl>
@@ -172,32 +177,32 @@ function init(D) {
   let cur = "withdrawals";
 
   // ---------------------------------------------------------------- sections, banner, sub-tabs
-  const C = D.cv, A = D.anom, P = D.pattern, r80 = D.band_r[0], r0 = D.band_r[4];
+  const C = D.cv, A = D.anom, P = D.pattern, rTop = D.band_r[0], r0 = D.band_r[4], M = D.model;
   const pc = v => Math.round(100 * v) + "%", pp = v => (100 * v).toFixed(1) + "%";
   const SECS = [
     ["s1", "Section 1", "Risk events from 15 Sep", `${T.from} – ${T.to} · ${fmt(T.scored)} requests`],
-    ["s2", "Section 2", "Newdata folder (July)", `15–17 July · ${fmt(T.j)} users`],
+    ["s2", "Section 2", "Old data (July)", `15–17 July · ${fmt(T.j)} users`],
     ["ref", "Reference", "Model and accuracy", "Method, test results and updates"],
   ];
   const BANNER = {
     s1: {eye: "Section 1 · Risk events", title: `Withdrawal requests from ${T.from.replace(/ \d{4}$/, "")} to ${T.to}`,
-      src: `Source: risk event exports in fraud_ingest/data. Each request comes with the user's bets and account statements for up to the last 30 days. Latest request: ${T.to}, ${T.to_time}.`,
-      kpis: [["alert", fmt(T.hi), "Requests scored 80% or higher", `from ${plural(T.hi_u, "user", "users")}`],
-        ["", pct1(r80.rej, r80.n) + "%", "Rejected by agents in the 80%+ band", `Compared with ${pct1(r0.rej, r0.n)}% in the 0–20% band`],
-        ["good", `${T.fraud_hi} of ${T.fraud_n}`, "Confirmed fraud cases scored 80%+", "Scored without the model seeing them"],
+      src: `Source: risk event exports in fraud_ingest/data. Each request comes with the user's bets and account statements for up to the last 20 days. Latest request: ${T.to}, ${T.to_time}.`,
+      kpis: [["alert", fmt(T.hi), "Requests scored 90% or higher", `from ${plural(T.hi_u, "user", "users")}`],
+        ["", pct1(rTop.rej, rTop.n) + "%", "Rejected by agents in the 90%+ band", `Compared with ${pct1(r0.rej, r0.n)}% in the 0–20% band`],
+        ["good", fmt(T.fraud_n), "Confirmed fraud cases", `All shown at 90%+. The model alone puts ${M.oof90[0]} of ${M.oof90[1]} there.`],
         ["", fmt(T.scored), "Requests scored", `${plural(T.users, "user", "users")}; ${fmt(T.nodata)} other requests had no betting data`]]},
-    s2: {eye: "Section 2 · Newdata folder", title: "July users from the Newdata folder",
-      src: "Source: Newdata folder, files data_pipeline_output-24, 25 and 26 (15–17 July). Each user has about 2 days of activity, and there is no master field.",
-      kpis: [["alert", fmt(T.j_hi), "Users scored 80% or higher", `${fmt(D.band_j[0].w)} of them made a withdrawal`],
+    s2: {eye: "Section 2 · Old data (July)", title: "July users (old data)",
+      src: "Source: old data from July, files data_pipeline_output-24, 25 and 26 (15–17 July). Each user has about 2 days of activity, and there is no master field.",
+      kpis: [["alert", fmt(T.j_hi), "Users scored 90% or higher", `${fmt(D.band_j[0].w)} of them made a withdrawal`],
         ["", fmt(T.j), "Users scored", "About 2 days of data per user"],
         ["", fmt(T.j_w), "Users who made a withdrawal", `${pct1(T.j_w, T.j)}% of all users`],
         ["", fmt(T.j_rules), "Users on the client's rule list", `Agreement with the fraud %: AUC ${T.rules_auc}`]]},
     ref: {eye: "Reference", title: "Model and accuracy",
       src: `How the fraud % is built, how it was tested, and what changed in the latest update${D.updated ? ` (${D.updated})` : ""}. This applies to both sections.`,
       kpis: [["good", C.full[0].toFixed(3), "AUC, confirmed fraud vs genuine", "1.000 is perfect and 0.500 is chance"],
-        ["", pc(C.full[1]), "Fraud caught at 1% false alarms", `Before this model: ${pc(C.base[1])}`],
-        ["", C.hidden[0].toFixed(3), "AUC on an unseen pattern", "Each case's own pattern hidden in testing"],
-        ["", pp(A.new.fa_L2), "False alarms on genuine requests", `Unusual-behaviour model ${A.new_v} · ${A.old_v} was ${pp(A.old.fa_L2)}`]]},
+        ["", `${M.oof90[0]} of ${M.oof90[1]}`, "Confirmed fraud at 90%+ on the model alone", "Tested without seeing each case"],
+        ["", pp(M.gen90), "Approved requests at 90%+", "About 1 in 1,000, by design"],
+        ["", C.hidden[0].toFixed(3), "AUC on an unseen pattern", "Each case's own pattern hidden in testing"]]},
   };
   const SUB = [["requests", "Withdrawal requests", T.scored], ["groups", "Account groups", D.groups.length]];
   const VIEWS = {requests: "s1", groups: "s1", newdata: "s2", model: "ref"};
@@ -232,11 +237,11 @@ function init(D) {
     $("#dTitle").textContent = S.title; $("#dWhat").textContent = S.what; $("#dHowL").textContent = S.howL; $("#dHow").textContent = S.how;
     $("#dSig").innerHTML = D.weights.slice(0, 6).map(([f, w]) => `<div class="sigline"><span class="dt"></span><span class="lb">${esc(f)}</span><span class="ct">weight ${w}</span></div>`).join("")
       + `<div class="sigline"><span class="dt"></span><span class="lb">Similar to a known fraud pattern (P1–P4)</span><span class="ct">score 50 → ${D.pmap[0][1]}%</span></div>`
-      + `<div class="sigline"><span class="dt low"></span><span class="lb">Account older than ${D.old.days} days lowers the score</span><span class="ct">80%+ needs pattern ${D.old.p80_old}+</span></div>`;
+      + `<div class="sigline"><span class="dt low"></span><span class="lb">Account older than ${D.old.days} days lowers the score</span><span class="ct">90%+ only at ${D.old.min}–${D.old.max}%</span></div>`;
     $("#dEx").textContent = S.example(S.rows[0]);
     $("#listTitle").textContent = S.listTitle; $("#bandSub").textContent = S.bandSub; $("#q").placeholder = S.ph;
     $("#bands").innerHTML = S.bands.map(b => `<button class="v${b.lo}" data-lo="${b.lo}" aria-pressed="false">
-        <div class="t">${esc(b.b)} · ${b.lo}–${b.lo + 20}%</div>
+        <div class="t">${esc(b.b)} · ${b.lo}–${b.hi}%</div>
         <div class="c">${fmt(b.n)}</div>
         <div class="d">${isW ? `${plural(b.u, "user", "users")} · ${fmt(b.rej)} rejected (${pct1(b.rej, b.n)}%)` : `${fmt(b.w)} made a withdrawal`}</div>
         <div class="m">${isW ? `Confirmed fraud: ${b.fraud}` : `On client rule list: ${fmt(b.rules)}`}</div></button>`).join("");
@@ -266,7 +271,8 @@ function init(D) {
   }
   function filtered() {
     const S = SETS[cur], st = state[cur], q = st.q.trim().toLowerCase(), lo = st.band === "" ? null : +st.band;
-    const hi = lo == null ? null : lo === 80 ? 101 : lo + 20;
+    const bb = lo == null ? null : S.bands.find(b => b.lo === lo);
+    const hi = bb ? (bb.hi >= 100 ? 101 : bb.hi) : null;
     const gm = cur === "withdrawals" ? /^g(\d+)$/.exec(q) : null;
     const out = S.rows.filter(r => {
       const p = S.pct(r);
@@ -327,11 +333,11 @@ function init(D) {
   $("#pgLast").onclick = () => page(() => 1e9);
 
   // ---------------------------------------------------------------- account groups (Section 1)
-  $("#groups").innerHTML = D.groups.map(g => `<div class="gcard ${g.pct >= 80 ? "v80" : g.pct >= 60 ? "v60" : g.pct >= 40 ? "v40" : ""}">
+  $("#groups").innerHTML = D.groups.map(g => `<div class="gcard ${g.pct >= 90 ? "v90" : g.pct >= 60 ? "v60" : g.pct >= 40 ? "v40" : ""}">
     <div class="gtop"><b>G${g.id} · ${esc(g.master)}</b>${pill(g.pct)}</div>
     <div class="kv"><span><b>${g.users}</b> users</span><span><b>${g.records}</b> ${g.records === 1 ? "request" : "requests"}</span><span><b>${g.rej}</b> rejected</span></div>
     <div class="kv"><span class="mono">${esc(g.from)} → ${esc(g.to)} IST</span></div>
-    <div class="kv"><span>Median deposit <b>${rs(g.dep)}</b></span><span>Profit ÷ deposits <b>${g.mult}x</b></span><span>Casino <b>${g.casino}%</b></span><span>Account age <b>${ageTxt(g.age)}</b></span></div>
+    <div class="kv"><span>Median deposit <b>${rs(g.dep)}</b></span><span>Median withdrawn <b>${rs(g.wd)}</b></span><span>Median profit <b>${money(g.pl)}</b></span><span>Casino <b>${g.casino}%</b></span><span>Account age <b>${ageTxt(g.age)}</b></span></div>
     <div class="members">${g.members.map(esc).join(", ")}</div>
     <button class="glink" data-g="${g.id}">View requests</button></div>`).join("");
   document.querySelectorAll(".glink").forEach(b => b.onclick = () => {
@@ -346,7 +352,7 @@ function init(D) {
     <tr class="win"><td>Now: fraud % model</td><td class="good">${C.full[0].toFixed(3)}</td><td class="good">${pc(C.full[1])}</td><td class="good">${pc(C.full[2])}</td></tr>
     <tr><td>Now, on an unseen pattern</td><td>${C.hidden[0].toFixed(3)}</td><td class="good">${pc(C.hidden[1])}</td><td>${pc(C.hidden[2])}</td></tr>`;
   $("#mBand").innerHTML = `<tr><th>Band</th><th>Requests</th><th>Rejected</th><th>Reject rate</th><th>Confirmed fraud</th></tr>` +
-    D.band_r.map(b => `<tr><td>${esc(b.b)}<span class="rng">${b.lo}–${b.lo + 20}%</span></td><td>${fmt(b.n)}</td><td>${fmt(b.rej)}</td><td>${pct1(b.rej, b.n)}%</td><td>${b.fraud}</td></tr>`).join("");
+    D.band_r.map(b => `<tr><td>${esc(b.b)}<span class="rng">${b.lo}–${b.hi}%</span></td><td>${fmt(b.n)}</td><td>${fmt(b.rej)}</td><td>${pct1(b.rej, b.n)}%</td><td>${b.fraud}</td></tr>`).join("");
   $("#mUpd").innerHTML = `<tr><th>Unusual-behaviour model</th><th>${esc(A.old_v)}</th><th>${esc(A.new_v)}</th></tr>
     <tr><td>Fraud caught with the pattern hidden</td><td>${A.old.pakde}/${A.old.total}</td><td class="good">${A.new.pakde}/${A.new.total}</td></tr>
     <tr><td>Caught only by the unusual-behaviour or group check</td><td>${A.old.sirf_L23}/${A.old.sirf_L23_total}</td><td class="good">${A.new.sirf_L23}/${A.new.sirf_L23_total}</td></tr>
@@ -364,12 +370,12 @@ function init(D) {
   $("#mMap").innerHTML = `<div class="wgroup">Account up to ${D.old.days} days old</div>` + D.pmap.map(([s, p]) => wbar(`Pattern score ${s}`, p, "crit")).join("")
     + `<div class="wgroup">Account older than ${D.old.days} days</div>` + D.pmap.map(([s, , p]) => wbar(`Pattern score ${s}`, p, "old")).join("");
   $("#mOldH").textContent = `Rule for accounts older than ${D.old.days} days`;
-  $("#mOldTxt").textContent = `Fraud is much rarer in older accounts. So for an account older than ${D.old.days} days, the behaviour part of the score is lowered, and the score stays at ${D.old.cap}% or below unless the user strongly matches a known pattern. To reach 80% or more, an older account needs a known-pattern score of ${D.old.p80_old} or higher, compared with ${D.old.p80_new} for a newer account.`;
-  $("#mAge").innerHTML = `<tr><th>Account age</th><th>Requests</th><th>Scored 80%+</th><th>Rejected in 80%+</th><th>Reject rate in 80%+</th><th>Confirmed fraud</th><th>Confirmed fraud at 80%+</th></tr>` +
+  $("#mOldTxt").textContent = `Fraud is much rarer in older accounts. So for an account older than ${D.old.days} days, the score is lowered. An older account is shown at 90% or more only when the case is very strong, and then only between ${D.old.min}% and ${D.old.max}%. All other older accounts stay below ${D.old.below + 1}%. A newer account needs no such extra strength.`;
+  $("#mAge").innerHTML = `<tr><th>Account age</th><th>Requests</th><th>Scored 90%+</th><th>Rejected in 90%+</th><th>Reject rate in 90%+</th><th>Confirmed fraud</th><th>Confirmed fraud at 90%+</th></tr>` +
     D.age_r.map(a => `<tr><td>${esc(a.b)}</td><td>${fmt(a.n)}</td><td>${fmt(a.hi)}</td><td>${fmt(a.hi_rej)}</td><td>${pct1(a.hi_rej, a.hi)}%</td><td>${a.fraud}</td><td>${a.fraud_hi}</td></tr>`).join("");
 
   // ---------------------------------------------------------------- note, footer, start
-  $("#noteRate").innerHTML = `<strong>How it compares with real outcomes.</strong> In Section 1, agents rejected 1 in every ${fmt(Math.round(r80.n / Math.max(1, r80.rej)))} requests scored 80% or higher, and 1 in every ${fmt(Math.round(r0.n / Math.max(1, r0.rej)))} requests scored below 20%.`;
+  $("#noteRate").innerHTML = `<strong>How it compares with real outcomes.</strong> In Section 1, agents rejected 1 in every ${fmt(Math.round(rTop.n / Math.max(1, rTop.rej)))} requests scored 90% or higher, and 1 in every ${fmt(Math.round(r0.n / Math.max(1, r0.rej)))} requests scored below 20%.`;
   $("#noteCov").innerHTML = `<strong>Data coverage.</strong> ${fmt(T.nodata)} requests from 15 Sep onward came without bets or statements, so they have no score. The exports also hold ${fmt(T.pre)} requests from before 15 Sep. Only ${T.pre_scored} of them had betting data, so they are not part of either section.`;
   $("#fS1").textContent = `Section 1: ${T.from} – ${T.to}`;
   $("#fModel").textContent = `Model: known patterns + unusual behaviour ${A.new_v.split(" ")[0]} + fraud %`;

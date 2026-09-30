@@ -1,202 +1,164 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
-    <title>Fraud Detection</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
-    />
-  </head>
-  <body>
-    <div class="wrap">
-      <header>
-        <p class="eyebrow">MiraiGate Technologies · Withdrawal fraud screening</p>
-        <h1>Fraud Detection</h1>
-        <p class="lede">A fraud score from 0% to 100% for every withdrawal request.</p>
-        <nav class="sections" id="sections" role="tablist" aria-label="Sections"></nav>
-
-        <div class="reviewwrap" id="review" hidden>
-          <div class="reviewbar zero" id="rvBar">
-            <span class="rvn" id="rvN">0</span>
-            <span class="rvt" id="rvT"></span>
-            <input type="search" id="rvWho" placeholder="Your name (optional)" aria-label="Reviewer name" autocomplete="off" />
-            <span class="rvmsg" id="rvMsg" aria-live="polite"></span>
-            <button class="rvbtn" id="rvCopy" disabled>Copy confirmed list</button>
-            <button class="rvbtn danger" id="rvClear" disabled>Clear all ticks</button>
-          </div>
-          <div class="dbline" id="rvDb" hidden></div>
-          <div class="rvfall" id="rvFall" hidden>
-            <p>The browser blocked the clipboard. Click in the box below, press <b>Ctrl+A</b> and then <b>Ctrl+C</b>. The list pastes straight into Excel.</p>
-            <textarea id="rvFallText" readonly rows="8" aria-label="Confirmed list"></textarea>
-            <button class="rvbtn" id="rvFallClose">Close</button>
-          </div>
-          <div class="banner amber" id="rvLocal" hidden>
-            <h4>Ticks are saved in this browser only</h4>
-            <p>They will not appear on another laptop or browser, and they are lost when an incognito window closes.
-              Use <strong>Copy confirmed list</strong> to keep a copy when you finish.</p>
-          </div>
-        </div>
-      </header>
-
-      <p class="loading" id="loading">Loading data…</p>
-
-      <div id="app" hidden>
-        <section class="secbar" aria-labelledby="sTitle">
-          <p class="eyebrow" id="sEye"></p>
-          <h2 class="sech" id="sTitle"></h2>
-          <p class="secsrc" id="sSrc"></p>
-          <div class="kpis" id="kpis"></div>
-          <div class="subtabs" id="subtabs" role="tablist" aria-label="Section 1 views"></div>
-        </section>
-
-        <section id="pane-data">
-          <div class="rulebox">
-            <div class="top"><h3 id="dTitle"></h3><p id="dWhat"></p></div>
-            <div class="body">
-              <div>
-                <div class="blk"><span class="lbl" id="dHowL"></span><p id="dHow"></p></div>
-                <div class="blk"><span class="lbl">What raises the score</span><div class="siglist" id="dSig"></div></div>
-              </div>
-              <div class="example"><span class="lbl">Highest score in this section</span><code id="dEx"></code></div>
-            </div>
-          </div>
-
-          <h3 class="sec">Score bands</h3>
-          <p class="sub" id="bandSub"></p>
-          <div class="verdicts" id="bands"></div>
-
-          <h3 class="sec" id="listTitle"></h3>
-          <p class="sub">Select a row to see full details. Select a column heading to sort. Tick the last column to mark a player as confirmed fraud.</p>
-          <div class="filters">
-            <div class="fgroup" style="flex: 1 1 220px">
-              <label class="flab" for="q">Search</label>
-              <input type="search" id="q" autocomplete="off" />
-            </div>
-            <div class="fgroup">
-              <label class="flab" for="band">Score band</label>
-              <select id="band">
-                <option value="">All bands</option>
-                <option value="80">Very high (80–100%)</option>
-                <option value="60">High (60–80%)</option>
-                <option value="40">Medium (40–60%)</option>
-                <option value="20">Low (20–40%)</option>
-                <option value="0">Normal (0–20%)</option>
-              </select>
-            </div>
-            <div class="fgroup" id="stWrap">
-              <label class="flab" for="st">Status</label>
-              <select id="st">
-                <option value="">All</option>
-                <option value="1">Rejected</option>
-                <option value="0">Approved</option>
-              </select>
-            </div>
-            <div class="fgroup">
-              <label class="flab" for="minp">Minimum fraud %<span class="rangeval" id="minpVal">0%</span></label>
-              <input type="range" id="minp" min="0" max="100" value="0" step="5" />
-            </div>
-            <div class="fgroup">
-              <span class="flab">Show only</span>
-              <div class="chips">
-                <button class="chip" id="cPat" aria-pressed="false">Known pattern</button>
-                <button class="chip" id="cNew" aria-pressed="false">New account (under 7 days)</button>
-                <button class="chip" id="cGrp" aria-pressed="false">In a group</button>
-                <button class="chip" id="cWd" aria-pressed="false">Made a withdrawal</button>
-                <button class="chip" id="cRules" aria-pressed="false">On client rule list</button>
-                <button class="chip" id="cTick" aria-pressed="false">Confirmed fraud</button>
-              </div>
-            </div>
-            <div class="fgroup"><span class="flab">&nbsp;</span><button class="reset" id="reset">Clear filters</button></div>
-          </div>
-          <div class="resbar"><span class="rescount" id="resCount"></span><span class="resmoney" id="resMoney"></span></div>
-          <div class="scroll">
-            <table class="data">
-              <thead><tr id="thead"></tr></thead>
-              <tbody id="tbody"></tbody>
-            </table>
-          </div>
-          <div class="pager">
-            <span class="pginfo" id="pgInfo"></span>
-            <div class="pgbtns">
-              <button id="pgFirst">« First</button><button id="pgPrev">‹ Previous</button><button id="pgNext">Next ›</button><button id="pgLast">Last »</button>
-            </div>
-          </div>
-        </section>
-
-        <section id="pane-groups" hidden>
-          <h3 class="sec">Account groups</h3>
-          <p class="sub">A group is 3 or more users under the same master who show similar unusual behaviour within 72 hours. A group can point to organised fraud.
-            The colour strip shows the group's median fraud %. Select “View requests” to open the group's withdrawal requests.</p>
-          <div class="gcards" id="groups"></div>
-        </section>
-
-        <section id="pane-model" hidden>
-          <div class="rulebox">
-            <div class="top"><h3>How the model was tested</h3><p id="mIntro"></p></div>
-            <div class="body one">
-              <div>
-                <div class="scroll box"><table class="cmp" id="mCv"></table></div>
-                <p class="tnote">AUC runs from 0.5 (no better than chance) to 1.0 (perfect). “At 1% false alarms” means the score is set so that it flags 1% of genuine requests, and the column shows how many fraud cases it catches at that setting.</p>
-              </div>
-            </div>
-          </div>
-          <div class="mgrid">
-            <div class="panel wide">
-              <h4 id="mOldH"></h4>
-              <p id="mOldTxt" style="margin: 0 0 12px"></p>
-              <div class="scroll box"><table class="cmp" id="mAge"></table></div>
-              <p>Section 1 requests, grouped by account age. Fraud is far more common in new accounts, which is why older accounts get a lower score.</p>
-            </div>
-            <div class="panel">
-              <h4>Score band and actual rejects</h4>
-              <div class="scroll box"><table class="cmp" id="mBand"></table></div>
-              <p>Section 1 requests. The 80%+ band has the highest reject rate, and every confirmed fraud case is in it.</p>
-            </div>
-            <div class="panel">
-              <h4>Model versions and tests</h4>
-              <div class="scroll box"><table class="cmp" id="mUpd"></table></div>
-              <p id="mTried" hidden></p>
-              <p id="mPat"></p>
-            </div>
-            <div class="panel">
-              <h4>What raises the score</h4>
-              <div id="mW"></div>
-              <p>Losses and low activity never raise the score. The direction of each factor is fixed in advance, so the model cannot learn a wrong direction from a small number of fraud examples.</p>
-            </div>
-            <div class="panel">
-              <h4>Known pattern score and fraud %</h4>
-              <div id="mMap"></div>
-              <p>The final fraud % is the higher of two numbers: the known-pattern score shown here, and the behaviour score. An older account needs a stronger pattern match for the same %.</p>
-            </div>
-          </div>
-        </section>
-
-        <div class="note">
-          <h3>How to read the fraud %</h3>
-          <p><strong>What the score means.</strong> The fraud % shows how closely a request or a user matches confirmed fraud cases.
-            0% means normal behaviour and 100% means very similar to confirmed fraud. It is not the chance that the user is a fraudster.</p>
-          <p id="noteRate"></p>
-          <p><strong>The decision stays with the agent.</strong> The score shows which requests to check first, and why. It does not hold or reject any withdrawal.</p>
-          <p><strong>Confirmed fraud ticks belong to the player.</strong> Ticking a user marks every request from that user, in both sections.
-            Ticks are saved to a shared database, so every reviewer sees the same list.</p>
-          <p id="noteCov"></p>
-        </div>
-      </div>
-
-      <footer>
-        <span>MiraiGate Technologies</span>
-        <span>Fraud Detection</span>
-        <span id="fS1"></span>
-        <span>Section 2: Newdata folder, 15–17 July</span>
-        <span id="fModel"></span>
-        <span>Contains client user data · internal use only</span>
-      </footer>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<title>Fraud Detection</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+</head>
+<body>
+<div class="wrap">
+<header>
+  <p class="eyebrow">MiraiGate Technologies · Withdrawal fraud screening</p>
+  <h1>Fraud Detection</h1>
+  <p class="lede">A fraud score from 0% to 100% for every withdrawal request.</p>
+  <nav class="sections" id="sections" role="tablist" aria-label="Sections"></nav>
+  <div class="reviewwrap" id="review" hidden>
+    <div class="reviewbar zero" id="rvBar">
+      <span class="rvn" id="rvN">0</span>
+      <span class="rvt" id="rvT"></span>
+      <input type="search" id="rvWho" placeholder="Your name (optional)" aria-label="Reviewer name" autocomplete="off">
+      <span class="rvmsg" id="rvMsg" aria-live="polite"></span>
+      <button class="rvbtn" id="rvCopy" disabled>Copy confirmed list</button>
+      <button class="rvbtn danger" id="rvClear" disabled>Clear all ticks</button>
     </div>
-    <script type="module" src="/src/main.js"></script>
-  </body>
+    <div class="dbline" id="rvDb" hidden></div>
+    <div class="rvfall" id="rvFall" hidden>
+      <p>The browser blocked the clipboard. Click in the box below, press <b>Ctrl+A</b> and then <b>Ctrl+C</b>. The list pastes straight into Excel.</p>
+      <textarea id="rvFallText" readonly rows="8" aria-label="Confirmed list"></textarea>
+      <button class="rvbtn" id="rvFallClose">Close</button>
+    </div>
+    <div class="banner amber" id="rvLocal" hidden>
+      <h4>Ticks are saved in this browser only</h4>
+      <p>They will not appear on another laptop or browser, and they are lost when an incognito window closes.
+        Use <strong>Copy confirmed list</strong> to keep a copy when you finish.</p>
+    </div>
+  </div>
+</header>
+
+<p class="loading" id="loading">Loading data…</p>
+
+<div id="app" hidden>
+
+<section class="secbar" aria-labelledby="sTitle">
+  <p class="eyebrow" id="sEye"></p>
+  <h2 class="sech" id="sTitle"></h2>
+  <p class="secsrc" id="sSrc"></p>
+  <div class="kpis" id="kpis"></div>
+  <div class="subtabs" id="subtabs" role="tablist" aria-label="Section 1 views"></div>
+</section>
+
+<section id="pane-data">
+  <div class="rulebox">
+    <div class="top"><h3 id="dTitle"></h3><p id="dWhat"></p></div>
+    <div class="body">
+      <div>
+        <div class="blk"><span class="lbl" id="dHowL"></span><p id="dHow"></p></div>
+        <div class="blk"><span class="lbl">What raises the score</span><div class="siglist" id="dSig"></div></div>
+      </div>
+      <div class="example"><span class="lbl">Highest score in this section</span><code id="dEx"></code></div>
+    </div>
+  </div>
+
+  <h3 class="sec">Score bands</h3>
+  <p class="sub" id="bandSub"></p>
+  <div class="verdicts" id="bands"></div>
+
+  <h3 class="sec" id="listTitle"></h3>
+  <p class="sub">Select a row to see full details. Select a column heading to sort. Tick the last column to mark a player as confirmed fraud.</p>
+  <div class="filters">
+    <div class="fgroup" style="flex:1 1 220px">
+      <label class="flab" for="q">Search</label>
+      <input type="search" id="q" autocomplete="off">
+    </div>
+    <div class="fgroup"><label class="flab" for="band">Score band</label>
+      <select id="band"><option value="">All bands</option><option value="90">Very high (90–100%)</option><option value="60">High (60–90%)</option>
+      <option value="40">Medium (40–60%)</option><option value="20">Low (20–40%)</option><option value="0">Normal (0–20%)</option></select></div>
+    <div class="fgroup" id="stWrap"><label class="flab" for="st">Status</label>
+      <select id="st"><option value="">All</option><option value="1">Rejected</option><option value="0">Approved</option></select></div>
+    <div class="fgroup">
+      <label class="flab" for="minp">Minimum fraud %<span class="rangeval" id="minpVal">0%</span></label>
+      <input type="range" id="minp" min="0" max="100" value="0" step="5">
+    </div>
+    <div class="fgroup"><span class="flab">Show only</span>
+      <div class="chips">
+        <button class="chip" id="cPat" aria-pressed="false">Known pattern</button>
+        <button class="chip" id="cNew" aria-pressed="false">New account (under 7 days)</button>
+        <button class="chip" id="cGrp" aria-pressed="false">In a group</button>
+        <button class="chip" id="cWd" aria-pressed="false">Made a withdrawal</button>
+        <button class="chip" id="cRules" aria-pressed="false">On client rule list</button>
+        <button class="chip" id="cTick" aria-pressed="false">Confirmed fraud</button>
+      </div></div>
+    <div class="fgroup"><span class="flab">&nbsp;</span><button class="reset" id="reset">Clear filters</button></div>
+  </div>
+  <div class="resbar"><span class="rescount" id="resCount"></span><span class="resmoney" id="resMoney"></span></div>
+  <div class="scroll"><table class="data"><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody></table></div>
+  <div class="pager">
+    <span class="pginfo" id="pgInfo"></span>
+    <div class="pgbtns"><button id="pgFirst">« First</button><button id="pgPrev">‹ Previous</button><button id="pgNext">Next ›</button><button id="pgLast">Last »</button></div>
+  </div>
+</section>
+
+<section id="pane-groups" hidden>
+  <h3 class="sec">Account groups</h3>
+  <p class="sub">A group is 3 or more users under the same master who show similar unusual behaviour within 72 hours. A group can point to organised fraud.
+    The colour strip shows the group's median fraud %. Select “View requests” to open the group's withdrawal requests.</p>
+  <div class="gcards" id="groups"></div>
+</section>
+
+<section id="pane-model" hidden>
+  <div class="rulebox">
+    <div class="top"><h3>How the model was tested</h3><p id="mIntro"></p></div>
+    <div class="body one">
+      <div>
+        <div class="scroll box"><table class="cmp" id="mCv"></table></div>
+        <p class="tnote">AUC runs from 0.5 (no better than chance) to 1.0 (perfect). “At 1% false alarms” means the score is set so that it flags 1% of genuine requests, and the column shows how many fraud cases it catches at that setting.</p>
+      </div>
+    </div>
+  </div>
+  <div class="mgrid">
+    <div class="panel wide"><h4 id="mOldH"></h4>
+      <p id="mOldTxt" style="margin:0 0 12px"></p>
+      <div class="scroll box"><table class="cmp" id="mAge"></table></div>
+      <p>Section 1 requests, grouped by account age. Fraud is far more common in new accounts, which is why older accounts get a lower score.</p></div>
+    <div class="panel"><h4>Score band and actual rejects</h4><div class="scroll box"><table class="cmp" id="mBand"></table></div>
+      <p>Section 1 requests. The 90%+ band has the highest reject rate, and every confirmed fraud case is in it.</p></div>
+    <div class="panel"><h4>Model versions and tests</h4><div class="scroll box"><table class="cmp" id="mUpd"></table></div>
+      <p id="mTried" hidden></p>
+      <p id="mPat"></p></div>
+    <div class="panel"><h4>What raises the score</h4><div id="mW"></div>
+      <p>Losses and low activity never raise the score. The direction of each factor is fixed in advance, so the model cannot learn a wrong direction from a small number of fraud examples.</p></div>
+    <div class="panel"><h4>Known pattern score and fraud %</h4><div id="mMap"></div>
+      <p>The final fraud % is the higher of two numbers: the known-pattern score shown here, and the behaviour score. An older account needs a stronger pattern match for the same %.</p></div>
+  </div>
+</section>
+
+<div class="note">
+  <h3>How to read the fraud %</h3>
+  <p><strong>What the score means.</strong> The fraud % shows how closely a request or a user matches confirmed fraud cases.
+    90% or more means it looks more like fraud than 999 of every 1,000 approved requests. Confirmed fraud cases are always shown at 95% or more.
+    It is not the chance that the user is a fraudster.</p>
+  <p id="noteRate"></p>
+  <p><strong>The decision stays with the agent.</strong> The score shows which requests to check first, and why. It does not hold or reject any withdrawal.</p>
+  <p><strong>Confirmed fraud ticks belong to the player.</strong> Ticking a user marks every request from that user, in both sections.
+    Ticks are saved to a shared database, so every reviewer sees the same list.</p>
+  <p id="noteCov"></p>
+</div>
+
+</div>
+
+<footer>
+  <span>MiraiGate Technologies</span>
+  <span>Fraud Detection</span>
+  <span id="fS1"></span>
+  <span>Section 2: Old data (July), 15–17 July</span>
+  <span id="fModel"></span>
+  <span>Contains client user data · internal use only</span>
+</footer>
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
 </html>
