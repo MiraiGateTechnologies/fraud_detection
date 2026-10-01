@@ -375,7 +375,7 @@ function init(D) {
     D.age_r.map(a => `<tr><td>${esc(a.b)}</td><td>${fmt(a.n)}</td><td>${fmt(a.hi)}</td><td>${fmt(a.hi_rej)}</td><td>${pct1(a.hi_rej, a.hi)}%</td><td>${a.fraud}</td><td>${a.fraud_hi}</td></tr>`).join("");
 
   // ---------------------------------------------------------------- note, footer, start
-  $("#noteRate").innerHTML = `<strong>How it compares with real outcomes.</strong> In Section 1, agents rejected 1 in every ${fmt(Math.round(rTop.n / Math.max(1, rTop.rej)))} requests scored 90% or higher, and 1 in every ${fmt(Math.round(r0.n / Math.max(1, r0.rej)))} requests scored below 20%.`;
+  $("#noteRate").innerHTML = `<strong>How it compares with real outcomes.</strong> In Section 1, agents rejected ${fmt(rTop.rej)} of the ${fmt(rTop.n)} requests scored 90% or higher (${(100 * rTop.rej / Math.max(1, rTop.n)).toFixed(1)}%), and 1 in every ${fmt(Math.round(r0.n / Math.max(1, r0.rej)))} requests scored below 20%.`;
   $("#noteCov").innerHTML = `<strong>Data coverage.</strong> ${fmt(T.nodata)} requests from 15 Sep onward came without bets or statements, so they have no score. The exports also hold ${fmt(T.pre)} requests from before 15 Sep. Only ${T.pre_scored} of them had betting data, so they are not part of either section.`;
   $("#fS1").textContent = `Section 1: ${T.from} – ${T.to}`;
   $("#fModel").textContent = `Model: known patterns + unusual behaviour ${A.new_v.split(" ")[0]} + fraud %`;
