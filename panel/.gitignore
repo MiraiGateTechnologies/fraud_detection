@@ -1,0 +1,17 @@
+# Built data and reviewer decisions contain client data. Never commit them.
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Server access keys and local settings
+*.pem
+*.key
+.env
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/

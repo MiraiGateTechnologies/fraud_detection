@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Sign in · Fraud Review</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231f4fd8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="login-page">
+<main class="login">
+  <div class="login-brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+    <div>Fraud Review<small>Withdrawal screening</small></div>
+  </div>
+  <form class="login-card" id="loginForm" novalidate>
+    <h1>Sign in</h1>
+    <p class="sub">Use the reviewer account given to you by the panel administrator.</p>
+    <div class="login-msg" id="loginMsg" role="status" hidden></div>
+    <div class="form-error" id="loginErr" role="alert" hidden></div>
+    <div class="field">
+      <label class="label" for="name">User name</label>
+      <input id="name" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="100" required autofocus>
+    </div>
+    <div class="field">
+      <label class="label" for="password">Password</label>
+      <div class="pw">
+        <input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required>
+        <button type="button" class="pw-toggle" id="pwToggle" aria-controls="password" aria-pressed="false">Show</button>
+      </div>
+      <div class="caps" id="caps" hidden>Caps Lock is on</div>
+    </div>
+    <button class="btn primary block" id="loginBtn" type="submit">Sign in</button>
+  </form>
+  <p class="login-foot">Access is limited to authorised reviewers. For a new account or a forgotten password, contact the panel administrator.</p>
+</main>
+<script type="module" src="/static/login.js"></script>
+</body>
+</html>

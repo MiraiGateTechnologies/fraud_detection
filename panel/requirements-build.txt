@@ -1,0 +1,4 @@
+# Only needed where build_data.py runs (next to the analysis workspace), not on the panel server.
+-r requirements.txt
+ijson>=3.2
+pandas>=2.0

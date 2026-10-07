@@ -1,0 +1,21 @@
+[Unit]
+Description=Fraud Review panel
+After=network.target
+
+[Service]
+User=panel
+Group=panel
+WorkingDirectory=/opt/fraud-panel
+Environment=PANEL_HOST=127.0.0.1
+Environment=PANEL_PORT=8080
+ExecStart=/opt/fraud-panel/venv/bin/python /opt/fraud-panel/server.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/fraud-panel/data
+
+[Install]
+WantedBy=multi-user.target
