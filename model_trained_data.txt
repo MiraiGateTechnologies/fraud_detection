@@ -1,0 +1,9 @@
+Group               Records	            Training me kaise use hua
+Fraud	                50	            Fraud ke examples
+↳ remark + data match	41	            Remark fraud wala tha (casino checking 18, cheater/suspicious 18, bet void 5) aur data me P1–P4 me se koi pattern mila
+↳ review se maane gaye	9	            Remark match nahi hua, par hum dono ne data dekh ke fraud maana (6 approved the, 3 reject)
+Genuine	                47,626	        Approved requests, normal users ke examples
+Unknown	                166	            Reject hue par data se check nahi ho saka (small amount, hold, naam likha, ya fraud remark ke saath pattern nahi mila). Training se bahar
+Not fraud	            38	            Platform ki galti (wrong odd, tech issue). Training se bahar
+Shak wale	            466	            Approved, par shak tha (user ka reject bhi hua, bina deposit bonus, same master cluster). Training se bahar, sirf testing me
+Data nahi	            982	            Bets/statements nahi aaye

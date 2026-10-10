@@ -21,6 +21,7 @@ import io
 import json
 import math
 import os
+import re
 import sqlite3
 import threading
 import zlib
@@ -31,7 +32,7 @@ from functools import lru_cache
 from typing import Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -80,7 +81,9 @@ async def require_sign_in(request: Request, call_next):
     user, why = accounts.session_state(request.cookies.get(COOKIE), touch=path != "/api/session")
     request.state.user = user
     if user or path in OPEN_PATHS:
-        return await call_next(request)
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "private, no-cache"
+        return response
     if path.startswith("/api/"):
         return JSONResponse({"detail": SIGNED_OUT.get(why, "Sign in to use the panel."), "reason": why or "signin"}, status_code=401)
     return RedirectResponse("/login?%s=1" % why if why else "/login", status_code=303)
@@ -117,7 +120,7 @@ def logout(request: Request):
 
 @app.get("/api/me")
 def me(request: Request):
-    return {"user": request.state.user}
+    return {"user": request.state.user, "role": accounts.get_role(request.state.user) or "reviewer"}
 
 
 @app.get("/api/session")
@@ -223,6 +226,12 @@ def review_db():
         CREATE TABLE IF NOT EXISTS pattern_notes (
             id INTEGER PRIMARY KEY AUTOINCREMENT, pattern TEXT NOT NULL, note TEXT NOT NULL,
             author TEXT NOT NULL, at TEXT NOT NULL, removed_at TEXT);
+        CREATE TABLE IF NOT EXISTS pattern_checks (
+            record_id TEXT PRIMARY KEY, pattern TEXT NOT NULL, fits INTEGER NOT NULL, note TEXT NOT NULL,
+            reviewer TEXT NOT NULL, at TEXT NOT NULL, code TEXT, user_id INTEGER);
+        CREATE TABLE IF NOT EXISTS pattern_check_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, record_id TEXT, pattern TEXT, fits INTEGER, note TEXT,
+            reviewer TEXT, at TEXT, code TEXT, user_id INTEGER);
     """)
     return db
 
@@ -322,6 +331,50 @@ def remove_note(request: Request, note_id: int = Query(..., ge=1, alias="id")):
     return {"ok": True}
 
 
+# ------------------------------------------------------------------ does the known pattern fit a request
+class CheckIn(BaseModel):
+    record_id: str = Field(min_length=1, max_length=64)
+    pattern: Literal["P1", "P2", "P3", "P4"]
+    answer: Literal["fits", "not_fit", "other"]
+    note: str = Field("", max_length=1000)
+    code: Optional[str] = Field(None, max_length=80)
+    user_id: Optional[int] = None
+
+
+CHECK_COLS = ["record_id", "pattern", "fits", "note", "reviewer", "at", "code", "user_id"]
+ANSWERS = {"fits": 1, "not_fit": 0, "other": 2}  # stored in the fits column; "other" keeps the reviewer's own answer in note
+ANSWER_OF = {v: k for k, v in ANSWERS.items()}
+
+
+def check_out(row):
+    rec = dict(zip(CHECK_COLS, row))
+    rec["answer"] = ANSWER_OF.get(rec.pop("fits"), "other")
+    return rec
+
+
+@app.get("/api/pattern-checks")
+def list_checks(record_id: Optional[str] = Query(None, min_length=1, max_length=64)):
+    """Reviewers' answers on whether the known pattern fits a request; all of them, or one request's."""
+    sql = "SELECT %s FROM pattern_checks" % ", ".join(CHECK_COLS)
+    with _lock, closing(review_db()) as db:
+        rows = (db.execute(sql + " WHERE record_id = ?", (record_id,)) if record_id else db.execute(sql + " ORDER BY at DESC")).fetchall()
+    return {"checks": [check_out(r) for r in rows]}
+
+
+@app.put("/api/pattern-checks")
+def save_check(c: CheckIn, request: Request):
+    note = c.note.strip() if c.answer == "other" else ""
+    if c.answer == "other" and not note:
+        raise HTTPException(422, "Write your answer about the pattern.")
+    vals = [c.record_id, c.pattern, ANSWERS[c.answer], note, request.state.user, now_ist(), c.code, c.user_id]
+    marks = ", ".join("?" * len(CHECK_COLS))
+    with _lock, closing(review_db()) as db:
+        db.execute("INSERT OR REPLACE INTO pattern_checks (%s) VALUES (%s)" % (", ".join(CHECK_COLS), marks), vals)
+        db.execute("INSERT INTO pattern_check_log (%s) VALUES (%s)" % (", ".join(CHECK_COLS), marks), vals)
+        db.commit()
+    return check_out(vals)
+
+
 @app.get("/api/decisions.csv")
 def export_decisions():
     with _lock, closing(review_db()) as db:
@@ -337,12 +390,46 @@ def export_decisions():
 
 
 # ------------------------------------------------------------------ dashboard data and pages
+AGENT_LINES = ("Rejected by agent", "Approved by agent", "Earlier request")
+_reviewer_view = {}
+
+
+def reviewer_dashboard(path):
+    """dashboard.json without the platform agent's decisions: for each request the decision, remark,
+    platform reason and training label are removed, reason lines that quote the agent are dropped, and
+    the reject counts are left out. Built once per data file and kept in memory."""
+    stamp = os.path.getmtime(path)
+    if _reviewer_view.get("stamp") != stamp:
+        D = json.load(open(path, encoding="utf-8"))
+        D["agent"] = False
+        for r in D.get("W", []):
+            r[2], r[11], r[12], r[13] = None, -1, -1, -1
+        d = D.get("dict", {})
+        d["k"] = ["; ".join(p for p in s.split("; ") if not p.startswith(AGENT_LINES)) for s in d.get("k", [])]
+        for k in ("lb", "rm", "rs"):
+            d[k] = []
+        for b in D.get("band_r", []):
+            b["rej"] = None
+        for g in D.get("groups", []):
+            g["rej"] = None
+        for a in D.get("age_r", []):
+            a["hi_rej"] = None
+        if "tot" in D:
+            D["tot"]["hi_rej"] = None
+        _reviewer_view.update(stamp=stamp, body=json.dumps(D, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    return _reviewer_view["body"]
+
+
 @app.get("/api/dashboard")
-def dashboard():
+def dashboard(request: Request):
     path = os.path.join(DATA, "dashboard.json")
     if not os.path.exists(path):
         raise HTTPException(503, "Dashboard data has not been built yet. Run build_data.py.")
-    return FileResponse(path, media_type="application/json", headers={"Cache-Control": "no-cache"})
+    if accounts.get_role(request.state.user) == "developer":
+        return FileResponse(path, media_type="application/json", headers={"Cache-Control": "no-cache"})
+    with _lock:
+        body = reviewer_dashboard(path)
+    return Response(body, media_type="application/json", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/meta")
@@ -354,16 +441,26 @@ def meta():
 app.mount("/static", StaticFiles(directory=WEB), name="static")
 
 
+def page(name):
+    """An HTML page with each /static/ file linked by its change time, so browsers load the new
+    version right after an update instead of a cached copy."""
+    def stamp(m):
+        return "/static/%s?v=%d" % (m.group(1), os.path.getmtime(os.path.join(WEB, m.group(1))))
+
+    with open(os.path.join(WEB, name), encoding="utf-8") as f:
+        return HTMLResponse(re.sub(r"/static/([\w.-]+\.(?:js|css))", stamp, f.read()))
+
+
 @app.get("/")
 def index():
-    return FileResponse(os.path.join(WEB, "index.html"), headers={"Cache-Control": "no-cache"})
+    return page("index.html")
 
 
 @app.get("/login")
 def login_page(request: Request):
     if request.state.user:
         return RedirectResponse("/", status_code=303)
-    return FileResponse(os.path.join(WEB, "login.html"), headers={"Cache-Control": "no-cache"})
+    return page("login.html")
 
 
 if __name__ == "__main__":

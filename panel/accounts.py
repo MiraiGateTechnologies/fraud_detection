@@ -2,10 +2,15 @@
 """
 Reviewer accounts and sign-in sessions of the review panel (data/users.db).
 
-  python accounts.py add <name> [<name> ...]   create accounts, asks for each password
+  python accounts.py add <name> [<name> ...]   create reviewer accounts, asks for each password
+  python accounts.py add --developer <name>    create a developer account
+  python accounts.py role <name> <role>        set the role: reviewer or developer
   python accounts.py passwd <name>             set a new password and end the user's open sessions
   python accounts.py remove <name>             delete the account and end its sessions
-  python accounts.py list                      accounts, last sign-in and open sessions
+  python accounts.py list                      accounts, role, last sign-in and open sessions
+
+Roles: a reviewer sees the scores, the activity data and the review tools. A developer also sees how the
+platform's agent handled each request (decision, remark, platform reason) and the training labels.
 
 On the server use the wrapper, which runs this as the panel user:
 
@@ -59,6 +64,7 @@ CREATE TABLE IF NOT EXISTS logins (
     id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL NOT NULL, name TEXT COLLATE NOCASE, ip TEXT, ok INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS logins_at ON logins (at);
 """
+ROLES = ("reviewer", "developer")
 _ready = set()
 
 
@@ -68,6 +74,10 @@ def connect():
     con = sqlite3.connect(path, timeout=10)
     if path not in _ready:
         con.executescript(SCHEMA)
+        cols = {r[1] for r in con.execute("PRAGMA table_info(users)")}
+        if "role" not in cols:  # accounts made before roles existed are reviewers
+            con.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'reviewer'")
+            con.commit()
         _ready.add(path)
     return con
 
@@ -125,17 +135,35 @@ def get_account(name):
     return row[0] if row else None
 
 
-def create_account(name, password):
+def get_role(name):
+    with closing(connect()) as con:
+        row = con.execute("SELECT role FROM users WHERE name = ?", (name,)).fetchone()
+    return row[0] if row else None
+
+
+def set_role(name, role):
+    if role not in ROLES:
+        raise ValueError("The role is reviewer or developer.")
+    with closing(connect()) as con:
+        n = con.execute("UPDATE users SET role = ?, changed = ? WHERE name = ?", (role, now_ist(), name)).rowcount
+        con.commit()
+    if not n:
+        raise ValueError("There is no account named %s." % name)
+
+
+def create_account(name, password, role="reviewer"):
     if not NAME_RE.match(name):
         raise ValueError("User names are 2 to 40 letters, digits, dots, dashes or underscores.")
+    if role not in ROLES:
+        raise ValueError("The role is reviewer or developer.")
     problem = password_problem(name, password)
     if problem:
         raise ValueError(problem)
     stamp = now_ist()
     with closing(connect()) as con:
         try:
-            con.execute("INSERT INTO users (name, password, created, changed) VALUES (?, ?, ?, ?)",
-                        (name, hash_password(password), stamp, stamp))
+            con.execute("INSERT INTO users (name, password, created, changed, role) VALUES (?, ?, ?, ?, ?)",
+                        (name, hash_password(password), stamp, stamp, role))
         except sqlite3.IntegrityError:
             raise ValueError("%s already exists." % name) from None
         con.commit()
@@ -167,7 +195,7 @@ def list_accounts():
     now = time.time()
     with closing(connect()) as con:
         return con.execute("""
-            SELECT u.name, u.created, u.last_login,
+            SELECT u.name, u.role, u.created, u.last_login,
                    EXISTS (SELECT 1 FROM sessions s WHERE s.name = u.name AND s.ended IS NULL AND s.seen > ? AND s.created > ?)
             FROM users u ORDER BY u.name""", (now - SESSION_IDLE, now - SESSION_MAX)).fetchall()
 
@@ -274,7 +302,12 @@ def ask_password(name):
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="fraud-panel-users", description="Reviewer accounts of the review panel.")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("add", help="create accounts").add_argument("names", nargs="+")
+    add = sub.add_parser("add", help="create accounts")
+    add.add_argument("--developer", action="store_true", help="the accounts can also see the agent's decisions")
+    add.add_argument("names", nargs="+")
+    role = sub.add_parser("role", help="set an account's role")
+    role.add_argument("name")
+    role.add_argument("role", choices=ROLES)
     sub.add_parser("passwd", help="set a new password").add_argument("name")
     sub.add_parser("remove", help="delete an account").add_argument("name")
     sub.add_parser("list", help="show accounts")
@@ -292,11 +325,20 @@ def main(argv=None):
                 failed = True
                 continue
             try:
-                create_account(name, ask_password(name))
-                print("Account %s created." % name)
+                kind = "developer" if args.developer else "reviewer"
+                create_account(name, ask_password(name), kind)
+                print("Account %s created (%s)." % (name, kind))
             except ValueError as e:
                 print("Skipped %s: %s" % (name, e))
                 failed = True
+
+    elif args.cmd == "role":
+        name = get_account(args.name)
+        if not name:
+            print("There is no account named %s." % args.name)
+            return 1
+        set_role(name, args.role)
+        print("%s is now a %s. The change shows when the panel is next opened or reloaded." % (name, args.role))
 
     elif args.cmd == "passwd":
         name = get_account(args.name)
@@ -319,9 +361,9 @@ def main(argv=None):
         if not rows:
             print("No accounts yet. Create one with: fraud-panel-users add <name>")
         else:
-            print("%-20s %-17s %-17s %s" % ("Account", "Created", "Last sign-in", "Signed in now"))
-            for name, created, last, live in rows:
-                print("%-20s %-17s %-17s %s" % (name, created, last or "never", "yes" if live else "no"))
+            print("%-20s %-10s %-17s %-17s %s" % ("Account", "Role", "Created", "Last sign-in", "Signed in now"))
+            for name, role, created, last, live in rows:
+                print("%-20s %-10s %-17s %-17s %s" % (name, role, created, last or "never", "yes" if live else "no"))
     return 1 if failed else 0
 
 

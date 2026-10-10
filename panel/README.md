@@ -12,7 +12,7 @@ The panel also holds the full request tables, account groups and the known fraud
 | Decisions | Every decision made in the panel, with CSV export for the platform |
 | Withdrawal requests | All scored risk events, with score bands and filters |
 | Account groups | 3 or more similar unusual users under one master within 72 hours |
-| Known patterns | The four confirmed fraud patterns (P1 to P4), what each check looks for, how many requests match, and notes from reviewers |
+| Known patterns | The four known fraud patterns (P1 to P4), what each check looks for, how many requests match, and notes from reviewers |
 
 On a request page:
 
@@ -22,8 +22,10 @@ On a request page:
   the platform numbered them. P/L and liability are the amounts on each bet as sent by the platform,
   not the settled result. Settled sports results are in the statements.
 - **NA** means the data had no statements or no bets for that request.
-- **Review**: choose Fraud or Not fraud, write a reason and press **Submit**. A notification confirms the
-  decision and that it will be used to retrain the model at the next update.
+- **Review** (right side): choose Fraud or Not fraud, write a reason and press **Submit**. When the request
+  matches a known pattern, the review box also asks whether the pattern fits this request: **Yes**, **No**,
+  or **Other** with the reviewer's own answer in text. The answer is optional and is saved with the same Submit. A notification confirms what was saved and that it
+  will be used to retrain the model at the next update.
 
 Scores run from 0 to 99%. No score reaches 100%.
 
@@ -72,7 +74,7 @@ Takes about 5 to 6 minutes. Run it again after new data is scored.
 |---|---|---|
 | `data/dashboard.json` | Request tables, bands, groups, model figures | Yes |
 | `data/activity.db` | Statements and bets per user, and the window each request was scored on | Yes |
-| `data/review.db` | Reviewer decisions with their full history, and notes on the known patterns | No, kept across rebuilds |
+| `data/review.db` | Reviewer decisions and pattern checks with their full history, and notes on the known patterns | No, kept across rebuilds |
 | `data/users.db` | Reviewer accounts, sessions and sign-in history | No, kept across rebuilds |
 
 `data/` holds client data and is never committed (see `.gitignore`).
@@ -113,6 +115,8 @@ All routes except sign-in need a session cookie.
 | GET | `/api/pattern-notes` | Notes on the known patterns |
 | POST | `/api/pattern-notes` | Add a note: `pattern` is `P1` to `P4`, `note` is the text |
 | DELETE | `/api/pattern-notes?id=<id>` | Remove your own note (kept in the database) |
+| GET | `/api/pattern-checks?record_id=<request id>` | Whether the known pattern fits a request (leave out `record_id` for all) |
+| PUT | `/api/pattern-checks` | Save an answer: `record_id`, `pattern` (`P1` to `P4`), `answer` (`fits`, `not_fit` or `other`); `note` holds the text for `other` |
 
 Requests that change data must come from the panel itself; requests started from another site are refused.
 

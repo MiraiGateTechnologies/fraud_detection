@@ -9,3 +9,10 @@ local.db
 local.db-journal
 local.db-wal
 local.db-shm
+
+# Review panel: built data and reviewer decisions contain client data
+panel/data/
+
+# Server access keys
+*.pem
+*.key

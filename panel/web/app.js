@@ -90,6 +90,7 @@ const ICON = {
   ok: svg('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.6"/>'),
   close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
   left: svg('<path d="M15 18l-6-6 6-6"/>'),
+  right: svg('<path d="M9 6l6 6-6 6"/>'),
   download: svg('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>'),
 };
 
@@ -145,6 +146,7 @@ const S = {
     requests: { q: "", band: "", agent: "", review: "", min: 0, pat: false, nw: false, grp: false, t: { sort: "score", dir: -1, page: 0 } },
     decisions: { which: "", t: { sort: "at", dir: -1, page: 0 } },
     groups: { t: { sort: "pct", dir: -1, page: 0 } },
+    patterns: { open: null },
   },
 };
 
@@ -152,7 +154,10 @@ const playerKey = (uid, code) => (uid != null ? "id:" + uid : "code:" + code);
 const decisionOf = (player) => S.decisions.get(player) || null;
 
 function buildData(D) {
-  const dic = (k, i) => (i >= 0 ? D.dict[k][i] || "" : "");
+  // Developer accounts get the platform agent's decisions (decision, remark, platform reason, training label);
+  // for reviewers the server leaves them out of the data altogether.
+  S.agent = D.agent !== false;
+  const dic = (k, i) => (i >= 0 ? (D.dict[k] || [])[i] || "" : "");
   S.reqs = D.W.map((r) => {
     const o = {
       code: r[0], at: r[1], rejected: r[2] === 1, pct: r[3], reasons: dic("k", r[4]), pattern: r[5], pscore: r[6], unusual: r[7],
@@ -217,6 +222,7 @@ function debounce(fn, ms = 180) {
 
 // ------------------------------------------------------------------ table with sorting and pages
 function mountTable(el, cfg) {
+  cfg.cols = cfg.cols.filter(Boolean); // columns can be left out (e.g. developer-only ones)
   const st = cfg.state;
   const per = cfg.per || 50;
   let rows = cfg.rows;
@@ -352,9 +358,9 @@ function renderReview() {
         <input type="search" class="input" id="rq" placeholder="Search user, master or white label" value="${esc(ui.q)}">
         <select class="select" id="rmin" aria-label="Minimum score">${[[60, "Score 60% or higher"], [75, "Score 75% or higher"], [90, "Score 90% or higher"]]
           .map(([v, l]) => `<option value="${v}"${ui.min === v ? " selected" : ""}>${l}</option>`).join("")}</select>
-        <select class="select" id="ragent" aria-label="Agent decision"><option value="">Any agent decision</option>
+        ${S.agent ? `<select class="select" id="ragent" aria-label="Agent decision"><option value="">Any agent decision</option>
           <option value="rej"${ui.agent === "rej" ? " selected" : ""}>Has a rejected request</option>
-          <option value="ok"${ui.agent === "ok" ? " selected" : ""}>All requests approved</option></select>
+          <option value="ok"${ui.agent === "ok" ? " selected" : ""}>All requests approved</option></select>` : ""}
         <label class="check"><input type="checkbox" id="rnew"${ui.nw ? " checked" : ""}> New accounts only</label>
       </div>
       <div id="rtable"></div>
@@ -379,7 +385,7 @@ function renderReview() {
       { key: "score", label: "Score", sortVal: (p) => p.top.pct, cell: (p) => scoreBadge(p.top.pct) },
       { key: "user", label: "User", sortVal: (p) => p.code.toLowerCase(), dir0: 1, cell: (p) => userCell(p.top) },
       { key: "last", label: "Latest request", sortVal: (p) => p.last, cls: "nowrap", cell: (p) => esc(requestTime(p.last)) },
-      { key: "n", label: "Requests", num: true, sortVal: (p) => p.n, cell: (p) => `${count(p.n)}${p.rej ? `<span class="sub">${count(p.rej)} rejected</span>` : ""}` },
+      { key: "n", label: "Requests", num: true, sortVal: (p) => p.n, cell: (p) => `${count(p.n)}${S.agent && p.rej ? `<span class="sub">${count(p.rej)} rejected</span>` : ""}` },
       { key: "why", label: "Main reasons", cls: "reasons", cell: (p) => reasonTags(p.top.reasons) },
       { key: "age", label: "Account age", sortVal: (p) => p.top.age, dir0: 1, cls: "nowrap", cell: (p) => ageCell(p.top.age) },
       { key: "dep", label: "Deposits", num: true, sortVal: (p) => p.top.dep, cell: (p) => money(p.top.dep) },
@@ -400,7 +406,7 @@ function renderReview() {
   });
   $("#rq").oninput = debounce((e) => { ui.q = e.target.value; refresh(); });
   $("#rmin").onchange = (e) => { ui.min = +e.target.value; refresh(); };
-  $("#ragent").onchange = (e) => { ui.agent = e.target.value; refresh(); };
+  if ($("#ragent")) $("#ragent").onchange = (e) => { ui.agent = e.target.value; refresh(); };
   $("#rnew").onchange = (e) => { ui.nw = e.target.checked; refresh(); };
 }
 
@@ -417,7 +423,7 @@ function inBand(p, lo) {
 
 function renderRequests(params) {
   const ui = S.ui.requests;
-  if (params.has("q")) { ui.q = params.get("q"); ui.band = ""; ui.t.page = 0; }
+  if (params.has("q")) { ui.q = params.get("q"); ui.band = ""; ui.min = +params.get("min") || 0; ui.t.page = 0; }
   const D = S.D;
   const T = D.tot;
   const top = D.band_r[0];
@@ -428,18 +434,18 @@ function renderRequests(params) {
       <p class="sub">Risk events from ${esc(T.from)} to ${esc(T.to)} (latest request ${esc(T.to_time)}). Each request is scored on the user's bets and statements from up to 20 days before it.</p></div></div>
     <div class="stat-row">
       ${stat("Scored 90% or higher", T.hi, `from ${plural(T.hi_u, "user", "users")}`)}
-      ${stat("Rejected by agents at 90%+", pct1(top.rej, top.n) + "%", `Compared with ${pct1(low.rej, low.n)}% below 20%`)}
-      ${stat("Confirmed fraud cases", T.fraud_n, `The model alone puts ${D.model.oof90[0]} of ${D.model.oof90[1]} at 90%+`)}
+      ${S.agent ? stat("Rejected by agents at 90%+", pct1(top.rej, top.n) + "%", `Compared with ${pct1(low.rej, low.n)}% below 20%`) : ""}
+      ${stat("Fraud examples in training", T.fraud_n, `The model alone puts ${D.model.oof90[0]} of ${D.model.oof90[1]} at 90%+`)}
       ${stat("Requests scored", T.scored, `${plural(T.users, "user", "users")}; ${count(T.nodata)} more had no betting data`)}
     </div>
     <div class="bands" id="bands">${D.band_r.map((b) => `<button class="band-card ${bandOf(b.lo)}${ui.band === String(b.lo) ? " on" : ""}" data-lo="${b.lo}" aria-pressed="${ui.band === String(b.lo)}">
       <div class="t">${esc(b.b)} · ${bandRange(b)}</div><div class="c">${count(b.n)}</div>
-      <div class="d">${count(b.rej)} rejected (${pct1(b.rej, b.n)}%)</div></button>`).join("")}</div>
+      <div class="d">${S.agent ? `${count(b.rej)} rejected (${pct1(b.rej, b.n)}%)` : plural(b.u, "user", "users")}</div></button>`).join("")}</div>
     <div class="card">
       <div class="toolbar">
-        <input type="search" class="input" id="fq" placeholder="User, master, remark, group (G24) or pattern (P2)" value="${esc(ui.q)}">
-        <select class="select" id="fagent" aria-label="Agent decision"><option value="">Any agent decision</option>
-          <option value="rej"${ui.agent === "rej" ? " selected" : ""}>Rejected</option><option value="ok"${ui.agent === "ok" ? " selected" : ""}>Approved</option></select>
+        <input type="search" class="input" id="fq" placeholder="User, master,${S.agent ? " remark," : ""} group (G24) or pattern (P2)" value="${esc(ui.q)}">
+        ${S.agent ? `<select class="select" id="fagent" aria-label="Agent decision"><option value="">Any agent decision</option>
+          <option value="rej"${ui.agent === "rej" ? " selected" : ""}>Rejected</option><option value="ok"${ui.agent === "ok" ? " selected" : ""}>Approved</option></select>` : ""}
         <select class="select" id="freview" aria-label="Review"><option value="">Any review</option>
           ${[["pending", "Waiting for review"], ["fraud", "Marked fraud"], ["not_fraud", "Marked not fraud"]].map(([v, l]) => `<option value="${v}"${ui.review === v ? " selected" : ""}>${l}</option>`).join("")}</select>
         <select class="select" id="fmin" aria-label="Minimum score">${[0, 20, 40, 60, 75, 90].map((v) => `<option value="${v}"${ui.min === v ? " selected" : ""}>${v ? `Score ${v}% or higher` : "Any score"}</option>`).join("")}</select>
@@ -475,7 +481,7 @@ function renderRequests(params) {
   };
   const line = (rows) => {
     const users = new Set(rows.map((r) => r.code)).size;
-    $("#fline").innerHTML = `<span><b>${count(rows.length)}</b> requests</span><span><b>${count(users)}</b> users</span><span><b>${count(rows.filter((r) => r.rejected).length)}</b> rejected by agents</span>`;
+    $("#fline").innerHTML = `<span><b>${count(rows.length)}</b> requests</span><span><b>${count(users)}</b> users</span>${S.agent ? `<span><b>${count(rows.filter((r) => r.rejected).length)}</b> rejected by agents</span>` : ""}`;
   };
   const rows0 = filter();
   line(rows0);
@@ -485,7 +491,7 @@ function renderRequests(params) {
       { key: "score", label: "Score", sortVal: (r) => r.pct, cell: (r) => scoreBadge(r.pct) },
       { key: "user", label: "User", sortVal: (r) => r.code.toLowerCase(), dir0: 1, cell: (r) => userCell(r) },
       { key: "at", label: "Requested (IST)", sortVal: (r) => r.at, cls: "nowrap", cell: (r) => esc(requestTime(r.at)) },
-      { key: "agent", label: "Agent decision", sortVal: (r) => (r.rejected ? 1 : 0), cell: (r) => agentPill(r.rejected) },
+      S.agent && { key: "agent", label: "Agent decision", sortVal: (r) => (r.rejected ? 1 : 0), cell: (r) => agentPill(r.rejected) },
       { key: "why", label: "Main reasons", cls: "reasons", cell: (r) => reasonTags(r.reasons) },
       { key: "age", label: "Account age", sortVal: (r) => r.age, dir0: 1, cls: "nowrap", cell: (r) => ageCell(r.age) },
       { key: "unusual", label: "Unusual score", num: true, sortVal: (r) => r.unusual, cell: (r) => count(r.unusual) },
@@ -506,7 +512,7 @@ function renderRequests(params) {
     };
   });
   $("#fq").oninput = debounce((e) => { ui.q = e.target.value; refresh(); });
-  $("#fagent").onchange = (e) => { ui.agent = e.target.value; refresh(); };
+  if ($("#fagent")) $("#fagent").onchange = (e) => { ui.agent = e.target.value; refresh(); };
   $("#freview").onchange = (e) => { ui.review = e.target.value; refresh(); };
   $("#fmin").onchange = (e) => { ui.min = +e.target.value; refresh(); };
   $$(".toggle[data-f]", view).forEach((b) => {
@@ -532,8 +538,8 @@ function whyHtml(r, withRemarks) {
     extra += `<div class="note-box"><b>Account older than ${old.days} days.</b> Older accounts get a lower score. They reach 90% or more only in very strong cases, and then only between ${old.min}% and ${old.max}%.</div>`;
   }
   if (r.unusualWhy) extra += `<div class="note-box"><b>Different from normal users:</b> ${esc(r.unusualWhy)}</div>`;
-  if (withRemarks && (r.remark || r.platformReason)) {
-    extra += `<div class="note-box"><b>Agent remark:</b> ${esc(r.remark) || "–"}<br><b>Platform reason:</b> ${esc(r.platformReason) || "–"}</div>`;
+  if (withRemarks && S.agent && (r.remark || r.platformReason)) {
+    extra += `<div class="note-box dev"><b>Developer view.</b> Not shown to reviewers.<br><b>Agent remark:</b> ${esc(r.remark) || "–"}<br><b>Platform reason:</b> ${esc(r.platformReason) || "–"}</div>`;
   }
   return `<ul class="why-list">${items}</ul>${extra}`;
 }
@@ -558,7 +564,7 @@ function renderRequest(rid) {
       <div class="col-main">
         <div class="card"><div class="facts">
           ${fact("Requested (IST)", esc(requestTime(r.at)))}
-          ${fact("Agent decision", agentPill(r.rejected))}
+          ${S.agent ? fact("Agent decision", agentPill(r.rejected), "developer view") : ""}
           ${fact("Account age", esc(ageText(r.age)))}
           ${fact("Deposits", money(r.dep), plural(r.depN, "deposit", "deposits"))}
           ${fact("Withdrawn", money(r.wd))}
@@ -575,12 +581,12 @@ function renderRequest(rid) {
           <dt>Known pattern score</dt><dd>${r.pscore != null ? count(Math.min(99, r.pscore)) : "–"}${r.pattern ? " · P" + r.pattern : ""}</dd>
           <dt>Unusual score</dt><dd>${count(Math.min(99, r.unusual))}</dd>
           <dt>Account group</dt><dd>${r.group ? `<a href="#/requests?q=G${r.group}">G${r.group}</a>` : "None"}</dd>
-          <dt>Training label</dt><dd>${esc(r.label) || "–"}</dd>
+          ${S.agent ? `<dt>Training label</dt><dd>${esc(r.label) || "–"}</dd>` : ""}
           <dt>Requests from this user</dt><dd>${count(all.length)}</dd>
         </dl></div>
       </aside>
     </div>`;
-  mountReview($("#review"), { player: r.player, uid: r.uid, code: r.code, section: 1, rid: r.rid, pct: r.pct });
+  mountReview($("#review"), { player: r.player, uid: r.uid, code: r.code, section: 1, rid: r.rid, pct: r.pct, pattern: r.pattern });
   mountActivity($("#activity"), { section: 1, key: r.rid, nStmts: r.nStmts, nBets: r.nBets, others, what: "request" });
 }
 
@@ -747,8 +753,8 @@ function mountActivity(el, ctx) {
       cols: [
         { key: "score", label: "Score", sortVal: (r) => r.pct, cell: (r) => scoreBadge(r.pct) },
         { key: "at", label: "Requested (IST)", sortVal: (r) => r.at, cls: "nowrap", cell: (r) => esc(requestTime(r.at)) },
-        { key: "agent", label: "Agent decision", cell: (r) => agentPill(r.rejected) },
-        { key: "remark", label: "Agent remark", cell: (r) => esc(r.remark) || '<span class="muted">–</span>' },
+        S.agent && { key: "agent", label: "Agent decision", cell: (r) => agentPill(r.rejected) },
+        S.agent && { key: "remark", label: "Agent remark", cell: (r) => esc(r.remark) || '<span class="muted">–</span>' },
         { key: "dep", label: "Deposits", num: true, cell: (r) => money(r.dep) },
         { key: "wd", label: "Withdrawn", num: true, cell: (r) => money(r.wd) },
         { key: "pl", label: "Profit", num: true, cell: (r) => moneyCell(r.profit) },
@@ -761,10 +767,17 @@ function mountActivity(el, ctx) {
 }
 
 // ------------------------------------------------------------------ review box
-function reviewNotice(code, decision) {
-  return decision === "fraud"
-    ? `${code} is marked as fraud. Your decision is saved and will be used to retrain the model at the next update, so similar cases are scored more accurately.`
-    : `${code} is marked as not fraud. Your decision is saved and will be used to retrain the model at the next update, so genuine players like this get fewer alerts.`;
+const PATTERN_ANSWER = {
+  fits: ["Fits this request", "green", "Yes, it fits"],
+  not_fit: ["Does not fit", "red", "No, it does not fit"],
+  other: ["Other", "gray", "Other"],
+};
+
+function reviewNotice(code, decision, pattern, answer) {
+  const said = !answer ? "" : answer === "fits" ? `, and you confirmed that ${pattern} fits this request`
+    : answer === "not_fit" ? `, and you said ${pattern} does not fit this request` : `, and your answer on ${pattern} was added`;
+  const why = decision === "fraud" ? "so similar cases are scored more accurately" : "so genuine players like this get fewer alerts";
+  return `${code} is marked as ${decision === "fraud" ? "fraud" : "not fraud"}${said}. ${said ? "Both are" : "Your decision is"} saved and will be used to retrain the model at the next update, ${why}.`;
 }
 
 function nextWaiting(exceptPlayer) {
@@ -774,9 +787,51 @@ function nextWaiting(exceptPlayer) {
 }
 
 function mountReview(el, ctx) {
+  const pat = ctx.pattern ? PATTERN[ctx.pattern] : null;
   let editing = !decisionOf(ctx.player);
   let choice = null;
   let draft = "";
+  let check = null; // saved answer on whether the known pattern fits this request
+  let answer = null; // "fits", "not_fit", "other" or null when not answered
+  let otherText = "";
+
+  const startPattern = () => {
+    answer = check ? check.answer : null;
+    otherText = check && check.answer === "other" ? check.note || "" : "";
+  };
+
+  function patternView() {
+    if (!pat) return "";
+    if (!check) return `<div class="rv-pattern"><span class="label">Known pattern ${pat[0]}</span><span class="muted">Not checked yet</span></div>`;
+    const [label, colour] = PATTERN_ANSWER[check.answer] || PATTERN_ANSWER.other;
+    return `<div class="rv-pattern"><span class="label">Known pattern ${pat[0]}</span>
+      <div class="pc-done"><span class="pill ${colour}">${label}</span>
+        <span class="by">by ${esc(check.reviewer)} on ${esc(requestTime(check.at))} IST</span></div>
+      ${check.note ? `<p class="pc-note">${esc(check.note)}</p>` : ""}</div>`;
+  }
+
+  function drawPatternForm() {
+    const box = $("#rvPattern", el);
+    if (!box || !pat) return;
+    box.innerHTML = `<span class="label">Known pattern ${pat[0]}: ${esc(pat[1])}</span>
+      <p class="q">Does it fit this request? Answer if you can.</p>
+      <div class="pc-choice">${Object.entries(PATTERN_ANSWER).map(([k, [, , text]]) =>
+        `<button type="button" class="pc-btn ${k}${answer === k ? " on" : ""}" data-v="${k}" aria-pressed="${answer === k}">${text}</button>`).join("")}
+      </div>
+      ${answer === "other" ? `<textarea id="rvPatNote" rows="2" maxlength="1000" aria-label="Your answer about ${pat[0]}"
+        placeholder="Write your answer about this pattern">${esc(otherText)}</textarea>` : ""}`;
+    const clearError = () => { const err = $("#rvErr", el); if (err) err.hidden = true; };
+    $$(".pc-btn", box).forEach((b) => {
+      b.onclick = () => {
+        answer = answer === b.dataset.v ? null : b.dataset.v; // a second click clears the answer
+        clearError();
+        drawPatternForm();
+        if (answer === "other") $("#rvPatNote", box).focus();
+      };
+    });
+    const note = $("#rvPatNote", box);
+    if (note) note.oninput = (e) => { otherText = e.target.value; clearError(); };
+  }
 
   function draw() {
     const d = decisionOf(ctx.player);
@@ -784,8 +839,9 @@ function mountReview(el, ctx) {
       el.innerHTML = `<h2 class="card-title">Review</h2>
         <div class="decided">${decisionPill(d)}<span class="by">by ${esc(d.reviewer)} on ${esc(d.at)} IST</span></div>
         <p class="reason-text">${esc(d.reason)}</p>
+        ${patternView()}
         <div class="btn-row"><button class="btn" id="rvChange">Change</button><button class="btn ghost danger" id="rvClear">Remove decision</button></div>`;
-      $("#rvChange", el).onclick = () => { editing = true; choice = d.decision; draft = d.reason; draw(); };
+      $("#rvChange", el).onclick = () => { editing = true; choice = d.decision; draft = d.reason; startPattern(); draw(); };
       $("#rvClear", el).onclick = clear;
       return;
     }
@@ -799,10 +855,12 @@ function mountReview(el, ctx) {
       <div class="field"><label class="label" for="rvReason">Reason</label>
         ${quick.length ? `<div class="quick">${quick.map((t) => `<button type="button" class="quick-chip">${esc(t)}</button>`).join("")}</div>` : ""}
         <textarea id="rvReason" rows="3" placeholder="${choice ? "Explain the decision. It goes back to the platform and is used for training." : "Choose Fraud or Not fraud first."}"${choice ? "" : " disabled"}>${esc(draft)}</textarea></div>
+      ${pat ? '<div class="field rv-pattern" id="rvPattern"></div>' : ""}
       <div class="field"><span class="label">Reviewer</span><div>${esc(S.signedIn)}</div></div>
       <div class="form-error" id="rvErr" hidden></div>
       <div class="btn-row"><button class="btn primary" id="rvSave">Submit</button><button class="btn" id="rvNext">Submit and open next</button>
         ${decisionOf(ctx.player) ? '<button class="btn ghost" id="rvCancel">Cancel</button>' : ""}</div>`;
+    drawPatternForm();
     $$(".choice-btn", el).forEach((b) => { b.onclick = () => { draft = $("#rvReason", el).value; choice = b.dataset.c; draw(); $("#rvReason", el).focus(); }; });
     $$(".quick-chip", el).forEach((b) => {
       b.onclick = () => {
@@ -833,12 +891,20 @@ function mountReview(el, ctx) {
     if (reason.length < 3) return fail("Write a short reason.");
     const body = { player: ctx.player, user_id: ctx.uid ?? null, code: ctx.code, section: ctx.section, record_id: ctx.rid || null,
       decision: choice, reason, score: ctx.pct ?? null };
-    $$(".btn", el).forEach((b) => { b.disabled = true; });
+    const answered = pat && answer ? answer : null;
+    const note = answered === "other" ? otherText.trim() : "";
+    if (answered === "other" && !note) return fail("Write your answer about the pattern, or choose Yes or No.");
+    const patChanged = answered && (!check || check.answer !== answered || (check.note || "") !== note);
+    $$("button", el).forEach((b) => { b.disabled = true; });
     try {
+      if (patChanged) {
+        check = await api("/api/pattern-checks", { method: "PUT", body: JSON.stringify({
+          record_id: ctx.rid, pattern: pat[0], answer: answered, note, code: ctx.code, user_id: ctx.uid ?? null }) });
+      }
       const saved = await api("/api/decisions", { method: "PUT", body: JSON.stringify(body) });
       S.decisions.set(ctx.player, saved);
     } catch (e) {
-      $$(".btn", el).forEach((b) => { b.disabled = false; });
+      $$("button", el).forEach((b) => { b.disabled = false; });
       return fail(e.message);
     }
     editing = false;
@@ -846,7 +912,7 @@ function mountReview(el, ctx) {
     renderNav(document.querySelector(".nav a.active")?.getAttribute("href")?.slice(2) || "review");
     const next = goNext ? nextWaiting(ctx.player) : null;
     notify(updated ? "Review updated" : "Review submitted",
-      reviewNotice(ctx.code, choice) + (goNext && !next ? " No more players are waiting for review." : ""));
+      reviewNotice(ctx.code, choice, pat && pat[0], answered) + (goNext && !next ? " No more players are waiting for review." : ""));
     if (next) { openRequest(next.top, "#/review"); return; }
     draw();
   }
@@ -860,12 +926,22 @@ function mountReview(el, ctx) {
     editing = true;
     choice = null;
     draft = "";
+    startPattern();
     toast("Decision removed");
     renderNav(document.querySelector(".nav a.active")?.getAttribute("href")?.slice(2) || "review");
     draw();
   }
 
   draw();
+  if (pat) {
+    api(`/api/pattern-checks?record_id=${encodeURIComponent(ctx.rid)}`).then((res) => {
+      if (!el.isConnected) return;
+      check = res.checks[0] || null;
+      if (!editing) { draw(); return; }
+      if (!answer && !otherText) startPattern();
+      drawPatternForm();
+    }).catch(() => { /* the pattern answer is optional; the review works without it */ });
+  }
 }
 
 // ------------------------------------------------------------------ account groups
@@ -883,7 +959,7 @@ function renderGroups() {
       { key: "pct", label: "Median score", sortVal: (g) => g.pct, cell: (g) => scoreBadge(g.pct) },
       { key: "users", label: "Users", num: true, sortVal: (g) => g.users, cell: (g) => count(g.users) },
       { key: "records", label: "Requests", num: true, sortVal: (g) => g.records, cell: (g) => count(g.records) },
-      { key: "rej", label: "Rejected", num: true, sortVal: (g) => g.rej, cell: (g) => count(g.rej) },
+      S.agent && { key: "rej", label: "Rejected", num: true, sortVal: (g) => g.rej, cell: (g) => count(g.rej) },
       { key: "dep", label: "Median deposit", num: true, sortVal: (g) => g.dep, cell: (g) => money(g.dep) },
       { key: "wd", label: "Median withdrawn", num: true, sortVal: (g) => g.wd, cell: (g) => money(g.wd) },
       { key: "pl", label: "Median profit", num: true, sortVal: (g) => g.pl, cell: (g) => moneyCell(g.pl) },
@@ -936,12 +1012,13 @@ function renderDecisions() {
 }
 
 // ------------------------------------------------------------------ known patterns
+// A pattern counts as caught when the model flagged a request with it, that is scored it 60% or higher.
 function patternStats() {
   const st = {};
   for (const n of [1, 2, 3, 4]) st[n] = { n: 0, users: new Set(), rej: 0, fraud: 0, not_fraud: 0 };
   for (const r of S.reqs) {
     const s = st[r.pattern];
-    if (!s) continue;
+    if (!s || r.pct < 60) continue;
     s.n += 1;
     s.users.add(r.code);
     if (r.rejected) s.rej += 1;
@@ -954,53 +1031,83 @@ function patternStats() {
 }
 
 function renderPatterns(params) {
+  const ui = S.ui.patterns;
+  if (params.has("p")) ui.open = +params.get("p") || null;
   const st = patternStats();
   const by = (S.D.pattern && S.D.pattern.by) || {};
-  const pstat = (value, label, note) => `<div><b>${value}</b><span>${esc(label)}</span>${note ? `<small>${esc(note)}</small>` : ""}</div>`;
+  const caught = [1, 2, 3, 4].filter((n) => st[n].n > 0);
   setCrumbs("Known patterns");
+  if (!caught.length) {
+    view.innerHTML = `<div class="page-head"><div><h1>Known patterns</h1></div></div>
+      <div class="card"><div class="empty">The model has not caught any known pattern in the current data.</div></div>`;
+    return;
+  }
   view.innerHTML = `
     <div class="page-head"><div><h1>Known patterns</h1>
-      <p class="sub">Fraud patterns found in confirmed cases. Every request is checked against them, using the user's statements and bets from up to 20 days before the request. Add a note when you notice something new about a pattern. Notes are read at each model update.</p></div></div>
-    <div class="pattern-grid">${[1, 2, 3, 4].map((n) => {
-      const [title, checks] = PATTERN_RULES[n];
-      const s = st[n];
-      return `<section class="card pattern" id="pat${n}" aria-labelledby="patTitle${n}">
-        <div class="pattern-head"><span class="pattern-code">P${n}</span><h2 id="patTitle${n}">${esc(title)}</h2></div>
-        <div class="pattern-body">
-          <div class="label">What the check looks for</div>
-          <ul class="check-list">${checks.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>
-          <div class="pattern-stats">
-            ${pstat(count(by["P" + n] || 0), "Confirmed fraud cases", "used to set the check")}
-            ${pstat(count(s.n), "Matching requests", `from ${plural(s.users.size, "user", "users")}`)}
-            ${pstat(count(s.rej), "Rejected by agents", "of the matching requests")}
-            ${pstat(count(s.fraud), "Marked fraud here", `${count(s.not_fraud)} marked not fraud`)}
-          </div>
-          ${s.n ? `<a class="btn" href="#/requests?q=P${n}">View matching requests</a>` : ""}
-        </div>
-        <div class="notes" data-p="P${n}">
-          <div class="notes-head"><h3>Notes</h3><span class="muted" data-count></span></div>
-          <form class="note-form">
-            <textarea rows="2" maxlength="2000" aria-label="Note about P${n}" placeholder="Write what you have noticed about this pattern"></textarea>
-            <div class="note-actions"><span class="form-error" hidden></span><button class="btn primary" type="submit">Add note</button></div>
-          </form>
-          <ul class="note-list"><li class="muted">Loading notes…</li></ul>
-        </div>
-      </section>`;
-    }).join("")}</div>`;
+      <p class="sub">Fraud patterns the model has caught so far. A pattern is listed once the model has flagged a request with it (scored 60% or higher), using the user's statements and bets from up to 20 days before the request. Click a pattern to see what the check looks for and to read or add notes. Notes are read at each model update.</p></div></div>
+    <div class="card"><div class="table-wrap"><table class="grid pattern-table">
+      <thead><tr><th>Pattern</th><th class="num hide-sm">Fraud examples in training</th><th class="num">Caught by the model</th>
+        ${S.agent ? '<th class="num hide-sm">Rejected by agents</th>' : ""}<th class="num hide-sm">Marked fraud here</th><th class="num hide-sm">Marked not fraud</th><th class="num">Notes</th></tr></thead>
+      <tbody>${caught.map((n) => {
+        const [title, checks] = PATTERN_RULES[n];
+        const s = st[n];
+        const open = ui.open === n;
+        return `<tr class="click pattern-row${open ? " open" : ""}" id="pat${n}" data-n="${n}" tabindex="0" aria-expanded="${open}" aria-controls="patDetail${n}">
+            <td><span class="pattern-name"><span class="chev">${ICON.right}</span><span class="pattern-code">P${n}</span><b>${esc(title)}</b></span></td>
+            <td class="num hide-sm">${count(by["P" + n] || 0)}</td>
+            <td class="num">${count(s.n)}<span class="sub">${plural(s.users.size, "user", "users")}</span></td>
+            ${S.agent ? `<td class="num hide-sm">${count(s.rej)}</td>` : ""}
+            <td class="num hide-sm">${count(s.fraud)}</td>
+            <td class="num hide-sm">${count(s.not_fraud)}</td>
+            <td class="num" data-count>–</td>
+          </tr>
+          <tr class="pattern-detail" id="patDetail${n}"${open ? "" : " hidden"}><td colspan="${S.agent ? 7 : 6}"><div class="pattern-detail-body">
+            <div class="pd-rule">
+              <div class="label">What the check looks for</div>
+              <ul class="check-list">${checks.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>
+              <div class="mini-stats"><span><b>${count(by["P" + n] || 0)}</b> ${by["P" + n] === 1 ? "fraud example in training" : "fraud examples in training"}</span>${S.agent ? `<span><b>${count(s.rej)}</b> rejected by agents</span>` : ""}<span><b>${count(s.fraud)}</b> marked fraud</span><span><b>${count(s.not_fraud)}</b> marked not fraud</span></div>
+              <a class="btn" href="#/requests?q=P${n}&min=60">View the ${plural(s.n, "caught request", "caught requests")}</a>
+            </div>
+            <div class="notes" data-p="P${n}">
+              <h3>Notes</h3>
+              <form class="note-form">
+                <textarea rows="2" maxlength="2000" aria-label="Note about P${n}" placeholder="Write what you have noticed about this pattern"></textarea>
+                <div class="note-actions"><span class="form-error" hidden></span><button class="btn primary" type="submit">Add note</button></div>
+              </form>
+              <ul class="note-list"><li class="muted">Loading notes…</li></ul>
+            </div>
+          </div></td></tr>`;
+      }).join("")}</tbody>
+    </table></div></div>`;
 
-  const grid = $(".pattern-grid", view);
+  const table = $(".pattern-table", view);
+  function show(n) {
+    ui.open = n;
+    $$(".pattern-row", table).forEach((row) => {
+      const on = +row.dataset.n === n;
+      row.classList.toggle("open", on);
+      row.setAttribute("aria-expanded", String(on));
+      $(`#patDetail${row.dataset.n}`, table).hidden = !on;
+    });
+  }
+  $$(".pattern-row", table).forEach((row) => {
+    const toggle = () => show(ui.open === +row.dataset.n ? null : +row.dataset.n);
+    row.onclick = toggle;
+    row.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } };
+  });
+
   let notes = [];
   const mine = (x) => x.author.toLowerCase() === S.signedIn.toLowerCase();
   function drawNotes() {
-    for (const box of $$(".notes", grid)) {
+    for (const box of $$(".notes", table)) {
       const list = notes.filter((x) => x.pattern === box.dataset.p);
-      $("[data-count]", box).textContent = list.length ? plural(list.length, "note", "notes") : "";
+      $(`#pat${box.dataset.p.slice(1)} [data-count]`, table).textContent = count(list.length);
       $(".note-list", box).innerHTML = list.length
         ? list.map((x) => `<li><div class="note-meta"><b>${esc(x.author)}</b><span>${esc(requestTime(x.at))} IST</span>
             ${mine(x) ? `<button type="button" class="link-btn" data-del="${x.id}">Remove</button>` : ""}</div><p>${esc(x.note)}</p></li>`).join("")
         : '<li class="muted">No notes yet.</li>';
     }
-    $$("[data-del]", grid).forEach((b) => { b.onclick = () => removeNote(+b.dataset.del); });
+    $$("[data-del]", table).forEach((b) => { b.onclick = () => removeNote(+b.dataset.del); });
   }
   async function removeNote(id) {
     if (!window.confirm("Remove this note?")) return;
@@ -1009,7 +1116,7 @@ function renderPatterns(params) {
     drawNotes();
     toast("Note removed");
   }
-  $$(".note-form", grid).forEach((f) => {
+  $$(".note-form", table).forEach((f) => {
     const ta = $("textarea", f);
     const err = $(".form-error", f);
     const btn = $("button", f);
@@ -1034,18 +1141,18 @@ function renderPatterns(params) {
     };
   });
   api("/api/pattern-notes").then((res) => {
-    if (!grid.isConnected) return;
+    if (!table.isConnected) return;
     notes = res.notes;
     drawNotes();
   }).catch((e) => {
-    $$(".note-list", grid).forEach((ul) => { ul.innerHTML = `<li class="form-error">${esc(e.message)}</li>`; });
+    $$(".note-list", table).forEach((ul) => { ul.innerHTML = `<li class="form-error">${esc(e.message)}</li>`; });
   });
 
-  const card = $(`#pat${params.get("p")}`, grid);
-  if (card) {
-    requestAnimationFrame(() => {
-      card.scrollIntoView({ block: "start" });
-      card.classList.add("flash");
+  const row = params.has("p") && $(`#pat${ui.open}`, table);
+  if (row) {
+    setTimeout(() => {
+      row.scrollIntoView({ block: "start" });
+      row.classList.add("flash");
     });
   }
 }

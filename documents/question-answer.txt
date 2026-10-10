@@ -1,0 +1,29 @@
+Q1. Jis user ko model ne fraud bola aur agent ne NOT FRAUD bola, wahi user baad me nayi withdrawal request le ke dobara aaye, to kya model use phir se fraud bolega?
+
+Ans - Haan bol sakta hai. Nayi request ka fraud % us user ke naye data se phir se banta hai, aur agent ke pichhle GENUINE se ussey chhoot nahi milti.
+
+
+
+Q2. Roj ek new pattern niklega to fir usko kaise detect karega ai?
+
+Ans - AI new pattern ko normal users se compare karke pakadta hai
+     - anomaly model sirf normal users ke data se seekha hai, isliye jis bhi user ka data normal user se bohot alag aayega, usey zyada fraud% milta hai, chaahe wo pattern Pehle kabhi na dekha ho.
+
+branch1001 ke shak wale 6 users (baaki 17 users is pattern me nahi aate). Sabke withdrawal approve hue:
+
+User	Request (IST)	Deposit	Jeet	Casino	Account age
+ce6719fb93e7	24 Sep 9:15 PM	₹1,200	14.8 guna	99%	2.4 din
+36f430ca	24 Sep 9:22 PM	₹300	33.8 guna	99%	0.1 din
+a14fbce	24 Sep 10:09 PM	₹500	20.6 guna	99%	0.1 din
+c8fc839f78cd	25 Sep 5:43 PM	₹1,000	26.2 guna	99%	2.9 din
+3a5d5de	27 Sep 7:52 PM	₹1,000	31.6 guna	100%	5.4 din
+c229fb16	27 Sep 11:15 PM	₹2,000	22.3 guna	98%
+
+
+statement me 20 din ka data aata hai 
+
+betting ka data me data ya time nahi aata 
+
+
+Jis server pe client ka data pehle se MongoDB me aa raha hai, wahin ek chhoti scoring service lagayenge jo har nayi withdrawal request aate hi isi model se fraud % aur wajah nikal ke MongoDB me save kare; dashboard (Vercel) wahi result live dikhayega, aur pehle 1–2 hafte ise shadow mode me chalake agents ke faislon se milayenge, phir client ke liye chalu karenge.
+
