@@ -4,8 +4,8 @@
 | Item | Detail |
 |---|---|
 | Document | Regulatory Compliance Matrix |
-| Version | 1.0 (review ke liye draft) |
-| Date | 10 Oct 2026 |
+| Version | 1.1 (review ke liye draft) |
+| Date | 14 Oct 2026 |
 | Organisation | MiraiGate Technologies |
 | Related documents | Data Privacy aur Retention Policy; Access Control aur Security Design; Audit Trail Specification |
 
@@ -34,7 +34,7 @@ Ye matrix ek jagah dikhata hai:
 
 | # | Kanoon / Standard | Lagu? | Main shartein | System me kaise | Status | Owner |
 |---|---|---|---|---|---|---|
-| 1 | **Digital Personal Data Protection Act, 2023** (India) aur uske Rules | Haan (India ke users ka digital personal data) | Kaam tay; kam se kam data; security safeguards; breach ki khabar; kaam khatam hone pe delete; fiduciary–processor contract; users ke haq | Data Privacy aur Retention Policy; pseudonymous codes; access control; logs | Partial (retention lagu karna, contract terms, breach process) | Client (fiduciary), MiraiGate (processor) |
+| 1 | **Digital Personal Data Protection Act, 2023** (India) aur uske Rules | Haan (India ke users ka digital personal data) | Kaam tay; kam se kam data; security safeguards; breach ki khabar; kaam khatam hone pe delete; fiduciary–processor contract; users ke haq; personal data India ke bahar bhejne pe niyam (cross-border) | Data Privacy aur Retention Policy; pseudonymous codes; access control; logs; live data 60 din me apne aap delete (replica set TTL) | Partial (retention lagu karna, contract terms, breach process, **live data Singapore me rakhne ki approval**) | Client (fiduciary), MiraiGate (processor) |
 | 2 | **Information Technology Act, 2000**: reasonable security practices | Haan (MiraiGate India me body corporate) | Data ki uchit security | Access Control aur Security Design | Partial (Gaps S-01 se S-06) | MiraiGate |
 | 3 | **CERT-In Directions (28 April 2022)** | Confirm | Cyber incident 6 ghante me CERT-In ko; logs 180 din India me; system clocks NTP se synced | Logs: journald, nginx, sign-in log; Incident Response Playbook | Partial (180 din log retention aur 6 ghante ka process likhna) | MiraiGate |
 | 4 | **Online gaming aur betting ke kanoon**: Promotion and Regulation of Online Gaming Act, 2025 (India), state gaming laws | Confirm (client ke business aur users ki location pe nirbhar) | Kaunsi services di ja sakti hain, payments, ads; vendors ki zimmedari | Scope ke bahar; system sirf fraud score deta hai | Confirm | Client + legal counsel; MiraiGate apni service ke liye bhi |
@@ -45,7 +45,7 @@ Ye matrix ek jagah dikhata hai:
 | 9 | **Automated decisions / profiling** (DPDP aur best practice) | Best practice | Insaan faisla le; wajah samjhayi ja sake | Score sirf salah; reviewer faisla deta hai; har score ke saath reasons (Reason Code Catalogue) | Met | MiraiGate + client |
 | 10 | **Client ke Terms aur Conditions** | Haan | Withdrawal rokne ya bets void karne ka haq T&C me ho; users ko data use ki jaankari | Scope ke bahar | Confirm | Client |
 | 11 | **Contract: client–MiraiGate data processing terms** | Haan | Processing sirf instructions pe; confidentiality; sub-processors (AWS); breach ki khabar; delete/return; audit ka haq | Abhi likhit nahi | Gap | Client + MiraiGate |
-| 12 | **AWS shared responsibility** | Haan | AWS: infrastructure; MiraiGate: OS, app, data, access | Access Control aur Security Design | Partial | MiraiGate |
+| 12 | **AWS shared responsibility** | Haan | AWS: infrastructure; MiraiGate: OS, app, data, access | Access Control aur Security Design; MongoDB Replica Set SRS | Partial | MiraiGate |
 | 13 | **Model risk management** (banks ke liye guidance; yahan kanoon nahi) | Best practice | Validation, governance, monitoring, change control | Model Cards; quality gates; Monitoring aur Drift Plan | Partial (validation report template aur approvals) | MiraiGate |
 
 ---
@@ -63,6 +63,7 @@ Ye matrix ek jagah dikhata hai:
 | Records | Audit Trail Specification; `review.db` history; S3 backups |
 | Human review | Reviewer SOP; decisions me reviewer ka naam |
 | Logs 180 din | Server log retention (Section 4, action 3) |
+| Data kahan rehta hai | Data Privacy Policy, Section 9; MongoDB Replica Set SRS (live data: Singapore) |
 
 ---
 
@@ -77,6 +78,7 @@ Ye matrix ek jagah dikhata hai:
 | 5 | Retention schedule lagu karna (Data Privacy Policy) | MiraiGate | P1 |
 | 6 | AML ke liye PAY-01 (deposit karke kam khel) ka rule ya report, client approval ke baad | MiraiGate + client compliance | P1 |
 | 7 | Client batayega ki wo kahan licensed hai aur users kahan se hain | Client | P0 |
+| 8 | Live data AWS Singapore region me rakhne ki legal review aur client ki likhit approval (DPDP cross-border) | Client + legal counsel | P0 |
 
 ---
 
@@ -90,3 +92,4 @@ Ye matrix ek jagah dikhata hai:
 | Version | Date | Badlav |
 |---|---|---|
 | 1.0 | 10 Oct 2026 | Pehla draft |
+| 1.1 | 14 Oct 2026 | Live data Singapore me (cross-border): DPDP row, evidence aur action 8 |

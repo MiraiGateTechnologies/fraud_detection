@@ -4,11 +4,11 @@
 | Item | Detail |
 |---|---|
 | Document | Monitoring aur Drift Plan |
-| Version | 1.0 (review ke liye draft) |
-| Date | 10 Oct 2026 |
+| Version | 1.1 (review ke liye draft) |
+| Date | 14 Oct 2026 |
 | Organisation | MiraiGate Technologies |
 | Baseline data | 15 Sep se 8 Oct 2026 |
-| Related documents | Model Cards; Service Levels aur Timing; Data Quality aur Lineage; Incident Response Playbook |
+| Related documents | Model Cards; Service Levels aur Timing; Data Quality aur Lineage; MongoDB Replica Set SRS; Incident Response Playbook |
 
 **Status:** abhi monitoring manual hai: weekly anomaly report aur har retrain ki reports. Is plan ke alerts aur reports automation ke Phase 2 aur 3 me banenge.
 
@@ -28,7 +28,7 @@ Players ka behaviour aur platform ka data waqt ke saath badalte hain. Jis model 
 
 | Layer | Kya | Kyun |
 |---|---|---|
-| 1. System health | Runs, panel, ingest feed | Kuch band to nahi |
+| 1. System health | Runs, panel, ingest feed, MongoDB replica set | Kuch band to nahi |
 | 2. Data | Freshness, volume, completeness, schema | Kharab data chupchaap score badalta hai |
 | 3. Features | Main features ka distribution | Players ya platform badle |
 | 4. Scores | Score aur bands ka distribution, queue size | Model ka bartaav badla |
@@ -69,7 +69,13 @@ Pehle hafte me "bina data" zyada tha, kyunki data feed shuru ho raha tha. Baseli
 | Run ka status | Har run | – | Koi stage fail | MiraiGate on-call |
 | Run ka time | Har run | Usual ka 1.5 guna | Usual ka 2 guna | MiraiGate on-call |
 | Panel check (sign-in page + data) | Har 5 minute | 1 fail | 2 fail lagataar | MiraiGate on-call |
-| Ingest feed: aakhri record kab aaya | Har 15 minute | 30 minute se koi record nahi (din me) | 2 ghante se koi record nahi | Platform IT + MiraiGate |
+| Live data (replica set): aakhri record kab aaya | Har 15 minute | 30 minute se koi record nahi (din me) | 2 ghante se koi record nahi | Platform IT + MiraiGate |
+| Replica set: primary maujood | Har minute | – | Koi primary nahi | MiraiGate on-call |
+| Replica set: member health | Har minute | Koi ek member down | Do member down | MiraiGate on-call |
+| Replica set: replication lag | Har minute | 1 second | 10 second | MiraiGate on-call |
+| Replica set: disk (`/data`) | Har 5 minute | 70% | 85% | MiraiGate on-call |
+| Replica set: CPU | Har 5 minute | 80% 15 minute tak | 95% 15 minute tak | MiraiGate on-call |
+| Temporary ingest feed: aakhri record kab aaya | Har 15 minute | 30 minute se koi record nahi (din me) | 2 ghante se koi record nahi | Platform IT + MiraiGate |
 
 ### 4.2 Data
 | Metric | Kitni baar | Warning | Critical | Kaun |
@@ -208,3 +214,4 @@ Har drift ka faisla aur wajah run report ya incident log me likha jayega.
 | Version | Date | Badlav |
 |---|---|---|
 | 1.0 | 10 Oct 2026 | Pehla draft |
+| 1.1 | 14 Oct 2026 | MongoDB replica set ke system-health metrics (primary, members, lag, disk, CPU, aakhri record) |

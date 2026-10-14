@@ -4,8 +4,8 @@
 | Item | Detail |
 |---|---|
 | Document | Data Privacy aur Retention Policy |
-| Version | 1.0 (review ke liye draft) |
-| Date | 10 Oct 2026 |
+| Version | 1.1 (review ke liye draft) |
+| Date | 14 Oct 2026 |
 | Organisation | MiraiGate Technologies |
 | Related documents | Access Control aur Security Design; Regulatory Compliance Matrix; Audit Trail Specification |
 
@@ -22,7 +22,7 @@ Ye policy batati hai:
 
 India ke users ke liye lagu kanoon Digital Personal Data Protection Act, 2023 (DPDP Act) hai.
 
-**Scope:** ingest service, MongoDB, workstation ke exports aur datasets, models, review panel, backups, logs.
+**Scope:** live data ka MongoDB replica set (Singapore), temporary ingest service aur uska MongoDB, workstation ke exports aur datasets, models, review panel, backups, logs.
 
 ---
 
@@ -84,7 +84,8 @@ Ye roles legal counsel se confirm karne hain, aur client aur MiraiGate ke contra
 
 | Data | Kahan | Kitne time | Uske baad |
 |---|---|---|---|
-| Raw risk events | MongoDB, JSON exports, S3 `raw/` | 12 mahine | Delete |
+| Live data (`surveillance`, `bets`, `statements`) | MongoDB replica set, Singapore | 60 din | TTL index se apne aap delete |
+| Raw risk events (temporary source, historical) | Ingest MongoDB, JSON exports, S3 `raw/` | 12 mahine | Delete |
 | Feature tables aur training datasets | Workstation / S3 `features/`, `datasets/` | 24 mahine | Delete |
 | Label snapshots | Run ke saath | 24 mahine | Delete (sirf counts report me rehte hain) |
 | Models, model registry, run reports | S3 `models/`, run reports | System ki poori umar | – |
@@ -94,6 +95,7 @@ Ye roles legal counsel se confirm karne hain, aur client aur MiraiGate ke contra
 | Sign-in log, sessions (`users.db`) | Panel server | 12 mahine | Delete |
 | Server aur app logs (nginx, journald, Docker) | Servers | 180 din kam se kam | Delete |
 | Backups | S3 | 90 din | S3 lifecycle se apne aap delete |
+| Replica set ke EBS snapshots | AWS | 3 din | Lifecycle policy se apne aap delete |
 | Workstation pe temporary copies | Analyst machine | 30 din, ya S3 pe jaane tak | Delete |
 | Ad-hoc analysis files (Excel, CSV) | Analyst machine | 90 din | Delete |
 
@@ -133,10 +135,11 @@ Decisions ka 5 saal AML record-keeping ki aam practice ke hisaab se proposal hai
 
 | Data | Location |
 |---|---|
-| Panel, ingest, backups | AWS (proposal: Mumbai region; confirm karna hai) |
+| Live data (MongoDB replica set) | AWS **Singapore** region (`ap-southeast-1`) |
+| Panel, temporary ingest, backups | AWS (proposal: Mumbai region; confirm karna hai) |
 | Analysis | MiraiGate ka workstation; target me S3 |
 
-Data India ke bahar le jaana ho to pehle client aur legal counsel ki approval chahiye.
+**Live data Singapore me rahega, yaani India ke bahar.** Iske liye client aur legal counsel ki likhit approval chahiye (DPDP Act ke cross-border niyam; Regulatory Compliance Matrix). Approval aane tak ye Open hai (Section 11).
 
 ---
 
@@ -149,6 +152,8 @@ Data India ke bahar le jaana ho to pehle client aur legal counsel ki approval ch
 | 3 | S3 lifecycle (backups 90 din) set karna | MiraiGate admin | P1 |
 | 4 | Data processing terms client ke contract me | Client + MiraiGate (legal) | P1 |
 | 5 | Monthly deletion job (abhi manual) | MiraiGate | P2 |
+| 6 | Live data Singapore region me rakhne ki client aur legal counsel se likhit approval | Client + MiraiGate (legal) | P0 |
+| 7 | Replica set me 60 din ka TTL index lagana (client ka time field aane pe) | MiraiGate admin | P1 |
 
 ---
 
@@ -156,13 +161,15 @@ Data India ke bahar le jaana ho to pehle client aur legal counsel ki approval ch
 
 | # | Sawaal | Proposal |
 |---|---|---|
-| 1 | Raw data kitne time | 12 mahine |
+| 1 | Raw data kitne time | Live data 60 din (replica set, TTL); historical raw 12 mahine |
 | 2 | Decisions kitne time | 5 saal / client ki AML policy |
-| 3 | AWS region | Mumbai |
+| 3 | AWS region | Live data: Singapore (tay). Panel aur temporary ingest: Mumbai (proposal) |
 | 4 | Client ko breach ki khabar kitne time me | 24 ghante |
 | 5 | Roles (fiduciary / processor) | Client / MiraiGate |
+| 6 | Live data India ke bahar (Singapore) rakhne ki approval | Client + legal counsel |
 
 ## Change Log
 | Version | Date | Badlav |
 |---|---|---|
 | 1.0 | 10 Oct 2026 | Pehla draft |
+| 1.1 | 14 Oct 2026 | Live data ka MongoDB replica set: 60 din retention (TTL), Singapore region, EBS snapshots 3 din. Cross-border approval ka action aur open decision |

@@ -4,11 +4,11 @@
 | Item | Detail |
 |---|---|
 | Document | System Architecture Document |
-| Version | 1.0 (review ke liye draft) |
-| Date | 10 Oct 2026 |
+| Version | 1.1 (review ke liye draft) |
+| Date | 14 Oct 2026 |
 | Organisation | MiraiGate Technologies |
 | Audience | Engineers, client IT team |
-| Related documents | System SRS; Continuous Learning aur Retraining Design; Deployment, Backup aur DR Runbook; Access Control aur Security Design |
+| Related documents | System SRS; MongoDB Replica Set SRS; Continuous Learning aur Retraining Design; Deployment, Backup aur DR Runbook; Access Control aur Security Design |
 
 Is document me server ke IP addresses, keys ya passwords nahi likhe gaye. Wo sirf admin ke paas rehte hain.
 
@@ -100,6 +100,7 @@ flowchart LR
 |---|---|---|
 | Panel server | 443 aur 80 (80 sirf HTTPS redirect / proxy), 22 sirf admin ke IP se | Panel `127.0.0.1:8080`; 8080 bahar band |
 | Ingest server | API port (compose me 80 → 8090); security group se client ka IP | MongoDB 27017 publish nahi hota, sirf Docker ke internal network pe |
+| MongoDB replica set (3 servers, ban raha hai) | 27017 sirf client aur reader ke IP se (TLS + auth); 22 sirf admin ke IP se | Members aapas me private IP se (security group `sg-mongo`) |
 
 **Gap:** compose config ke hisaab se ingest API **HTTP** pe hai, aur API key header me jaati hai. Production me HTTPS (proxy ya load balancer) confirm karna hai. Access Control aur Security Design me S-01.
 
@@ -109,9 +110,8 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    PL[Client platform] -->|created + decided events| API[Ingest service]
-    API --> MDB[(MongoDB)]
-    MDB -->|read-only export endpoint| RUN
+    PL[Client platform] -->|MongoDB driver, TLS<br/>har ~10 second| RS[(MongoDB replica set, Singapore<br/>2 data servers + arbiter<br/>betting-data-ingest.prime1.one)]
+    RS -->|read-only user, secondary se| RUN
     subgraph AWS["Client ka AWS account"]
         SCH[EventBridge Scheduler] --> RUN[Pipeline runner<br/>EC2 m6i.xlarge, sirf run ke time]
         RUN <--> S3[(S3: raw, feedback, features,<br/>datasets, models, releases)]
@@ -125,11 +125,12 @@ flowchart LR
         S3 -->|har 10 min pull| AG
         EXJ --> S3
     end
-    API -.->|Phase baad: real-time score| RT[Scoring API]
+    RS -.->|Phase baad: real-time score| RT[Scoring API]
 ```
 
 | Badlav | Kyun |
 |---|---|
+| Live data seedha MongoDB replica set me (client platform likhta hai); ingest service aur API pull ki jagah | Platform ko hamari API se integration nahi karni; data ~10 second me aata hai; ek server gire to bhi chalta rahe. Temporary ingest service kuch time saath chalegi (System SRS, SRC-03), phir band |
 | Object storage (S3) me raw data, feedback, features, datasets, models, releases | Ek jagah, versioned, encrypted; workstation pe nirbharta khatam |
 | Pipeline runner alag instance pe, sirf run ke time | Kharcha kam; panel server pe bojh nahi |
 | Release agent pull karta hai, push nahi | Pipeline ke paas panel server ki keys nahi; ek baar me swap aur rollback |
@@ -138,6 +139,22 @@ flowchart LR
 | Real-time scoring API (baad ka phase) | Platform Data Contract ka G-01 band hone ke baad |
 
 Detail: Continuous Learning aur Retraining Design.
+
+### 3.1 Live Data Store: MongoDB Replica Set (ban raha hai)
+
+| Member | Instance | AZ | Kaam |
+|---|---|---|---|
+| `mongo-1` | `r7g.large` (2 vCPU, 16 GB), 200 GB gp3 | AZ-a | Primary: client ke saare writes |
+| `mongo-2` | `r7g.large`, 200 GB gp3 | AZ-b | Secondary: live copy; system yahan se padhta hai |
+| `mongo-arb` | `t4g.small` | AZ-c | Arbiter: sirf vote, data nahi |
+
+- Region: AWS Singapore (`ap-southeast-1`); public subnets, har server pe Elastic IP; MongoDB 8.0, Ubuntu 24.04 ARM.
+- Naam: client ke liye `betting-data-ingest.prime1.one` (SRV record se driver ko servers ki list milti hai); har server ka apna naam `mongo-*.betting-data-ingest.prime1.one`.
+- Database `fraud`; collections `surveillance`, `bets`, `statements`; data 60 din (TTL index).
+- Primary gire to 10–12 second me apne aap naya primary; client ka driver khud naye primary pe likhta hai.
+- Security: TLS, authentication, port 27017 sirf client aur reader ke IP ke liye; passwords Secrets Manager me.
+
+Poori detail, create karne ke steps aur kharcha: MongoDB Replica Set SRS.
 
 ---
 
@@ -154,6 +171,8 @@ Detail: Continuous Learning aur Retraining Design.
 | D-07 | Models chhote aur samjhne layak (rules, Isolation Forest, signed logistic) | 62 fraud examples; har score ki wajah dikhani hai |
 | D-08 | Pull-based release | Security aur atomic switch |
 | D-09 | Panel ka text sirf English | Client-facing |
+| D-10 | Live data ke liye MongoDB replica set (2 data servers + arbiter), API nahi | Client seedha likhta hai, integration aasaan; ek server gire to bhi likhna chale; arbiter se teesra vote sasta |
+| D-11 | Replica set public subnet me Elastic IP ke saath (load balancer / VPN nahi) | Simple aur sasta; security IP allowlist, TLS aur authentication se |
 
 ---
 
@@ -162,7 +181,7 @@ Detail: Continuous Learning aur Retraining Design.
 | Pehlu | Kaise |
 |---|---|
 | Scale | Roz 5,000 requests tak bina hardware badle; panel 6 reviewers (User1–User6) |
-| Availability | systemd restart (3 sec); ingest me Docker `restart: unless-stopped`; fail-open |
+| Availability | systemd restart (3 sec); ingest me Docker `restart: unless-stopped`; replica set me automatic failover (10–12 sec); fail-open |
 | Performance | Gzip; versioned static files; statements/bets page-wise (100 rows) |
 | Security | Access Control aur Security Design |
 | Backup / DR | Deployment, Backup aur DR Runbook |
@@ -177,6 +196,7 @@ Detail: Continuous Learning aur Retraining Design.
 | Development | Workstation (`python server.py`, `127.0.0.1:8080`) | Code aur data ka test |
 | Production panel | Panel server (`review-panel.api.savage1.one`) | Client reviewers |
 | Production ingest | Ingest server | Platform ka feed |
+| Production live data (ban raha hai) | MongoDB replica set, Singapore (`betting-data-ingest.prime1.one`) | Platform ka live data |
 | Training (target) | Alag EC2, schedule pe | Retrain aur scoring |
 
 Staging environment abhi nahi hai. Proposal: panel ka ek staging copy same server pe alag port aur alag data folder ke saath.
@@ -188,11 +208,12 @@ Staging environment abhi nahi hai. Proposal: panel ka ek staging copy same serve
 | Folder | Kya hai |
 |---|---|
 | `fraud_ingest/` | Ingest service (Go), Docker Compose, deploy notes |
+| `fraud_ingest/model_deploy/` | Ingest data pe local scoring, panel data build aur retrain (reader container + SSH tunnel) |
 | `pattern_detection/` | Data preparation, pattern rules, pattern score, pattern test |
 | `new_pattern_detection/` | Features, anomaly model (Layer 2/3), weekly update, naye pattern ki khoj |
 | `fraud_score/` | Fraud % train, scoring, panel artifact |
 | `dashboard_github/fraud_detection/panel/` | Review panel: `server.py`, `accounts.py`, `web/`, `deploy/`, `build_data.py` |
-| `Documets/` | Ye aur baaki documents |
+| `dashboard_github/fraud_detection/documents/` | Ye aur baaki documents |
 
 Client data (`data/` folders) kabhi repository me commit nahi hota.
 
@@ -200,3 +221,4 @@ Client data (`data/` folders) kabhi repository me commit nahi hota.
 | Version | Date | Badlav |
 |---|---|---|
 | 1.0 | 10 Oct 2026 | Pehla draft |
+| 1.1 | 14 Oct 2026 | Live data ke liye MongoDB replica set (Section 3.1): target diagram, network table, D-10, D-11, environments. Documents folder ka naya path |

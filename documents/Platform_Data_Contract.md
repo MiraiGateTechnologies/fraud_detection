@@ -4,11 +4,11 @@
 | Item | Detail |
 |---|---|
 | Document | Data Contract (platform → fraud detection) |
-| Version | 1.0 (review ke liye draft) |
-| Date | 10 Oct 2026 |
+| Version | 1.1 (review ke liye draft) |
+| Date | 14 Oct 2026 |
 | Data dene wala | Client platform (betting aur casino) |
 | Data lene wala | MiraiGate Technologies, Fraud Detection Platform |
-| Related documents | Data Dictionary; Data Quality aur Lineage; Service Levels aur Timing |
+| Related documents | Data Dictionary; Data Quality aur Lineage; Service Levels aur Timing; MongoDB Replica Set SRS |
 
 ---
 
@@ -25,7 +25,8 @@ Ye contract teen cheezein tay karta hai:
 
 ## 2. Scope
 
-- **Shamil hai:** platform pe flag hui har withdrawal request (risk event), uske saath user, bets aur statements ka snapshot.
+- **Shamil hai (abhi, temporary):** platform pe flag hui har withdrawal request (risk event), uske saath user, bets aur statements ka snapshot.
+- **Shamil hai (live data, contract ke baad):** har withdrawal request, user, bets aur statements, jo platform seedha hamare MongoDB replica set me likhega. Agent ke faisle (approve/reject, remarks, locks) isme nahi aayenge.
 - **Shamil nahi hai:** card ya bank details, KYC documents, passwords. Inki zarurat nahi hai aur inhe nahi bhejna hai.
 
 ---
@@ -39,6 +40,20 @@ Ye contract teen cheezein tay karta hai:
 - **Record agent ke faisle ke baad aata hai** (median 1.8 second baad). Request bante waqt kuch nahi aata.
 
 ### 3.2 Contract ke Baad Kaise Aayega
+
+**Raasta:** platform data seedha hamare **MongoDB replica set** me likhega (MongoDB driver se), `POST /ingest` nahi.
+
+| Item | Value |
+|---|---|
+| Connection string | `mongodb+srv://client_writer@betting-data-ingest.prime1.one/fraud?tlsCAFile=ca.pem&retryWrites=true` (password alag, secure tareeke se) |
+| Database | `fraud` |
+| Collections | `surveillance`, `bets`, `statements` (fields Section 4 ke hisaab se; aakhri schema platform confirm karega) |
+| Kitni baar | Har ~10 second, naye ya badle records |
+| User | `client_writer`: sirf insert, update aur find; delete nahi |
+| Failover | Primary server gire to 10–15 second me doosra primary ban jaata hai; driver khud naye primary pe likhta hai, connection string nahi badalti |
+
+Servers, security aur DNS ki detail MongoDB Replica Set SRS me hai.
+
 | Event | Kab bhejna hai | Kya bhejna hai |
 |---|---|---|
 | **Created** | Request bante hi, 10 second ke andar | Poora record, `status = "pending"`, user + bets + statements ke saath |
@@ -48,7 +63,8 @@ Ye contract teen cheezein tay karta hai:
 **Niyam:**
 - Same `_id` dobara aaye to naya version purane ki jagah lega (idempotent). Order ki guarantee zaroori nahi; `updatedAt` se naya version tay hoga.
 - "Created" event ke bets aur statements request ke time tak ke hi hon.
-- Network fail ho to platform 24 ghante tak retry karega. Ingest service ka `done` jawab milne tak record bheja hua nahi maana jayega.
+- Driver me `retryWrites=true` rahe. Write fail ho (network, ya failover ke 10–15 second) to platform record apne paas rakh ke dobara likhega, 24 ghante tak. MongoDB ka write acknowledgement milne tak record likha hua nahi maana jayega.
+- Live data me agent ke faisle (`status`, `remarks`, `reason`, locks, `action_time`) nahi aayenge (System SRS, Section 2.5). "Decided" aur "Corrected" events tabhi lagu honge jab platform ye bhejne ko tayyar ho; warna sirf "Created" aayega.
 
 ### 3.3 Fallback
 Feed band ho to platform JSON export (same schema) de sakta hai. Next run use utha lega.
@@ -151,6 +167,8 @@ Abhi 100 rejects (33%) ka remark sirf "hold", ".", ya agent ka naam hai. Inse ko
 | G-12 | Number string me | `stake`, `pl`, `odds` string | Number | Parsing ki galti na ho | P2 |
 | G-13 | Reason ke naam ek jaise nahi | "Same IP Multiple User/user" | Tay list | Ginti sahi | P2 |
 | G-14 | Sport aur market ki list | `sport_id` 4344 ka matlab nahi | Poori list | Reports sahi | P2 |
+| G-15 | Platform ke servers ka IP nahi mila | – | Egress IP ya IP range (jis IP se platform ke servers internet pe jaate hain) | Replica set ka port sirf platform ke liye kholna; na mile to client certificate (mutual TLS) | P0 |
+| G-16 | Teen collections ka schema aur volume | – | `surveillance`, `bets`, `statements` ke fields, time field, roz kitni bets | Indexes, 60 din ka TTL aur disk size tay karna | P0 |
 
 ---
 
@@ -199,11 +217,13 @@ Abhi 100 rejects (33%) ka remark sirf "hold", ".", ya agent ka naam hai. Inse ko
 
 ## 9. Security aur Privacy
 
-- Saara data HTTPS pe aayega.
-- API key har 90 din badli jayegi. Ingest service sirf platform ke tay IP addresses se requests lega.
+- Saara data TLS pe aayega (MongoDB connection me `tls=true`; hamara CA certificate `ca.pem` platform ko diya jayega).
+- Platform `client_writer` user se likhega, jo sirf `fraud` database me insert, update aur find kar sakta hai; delete nahi. Password Secrets Manager me rahega aur har 90 din badlega.
+- Replica set ka port 27017 sirf platform ke tay IP addresses (egress IP) ke liye khula hoga. IP na mile to client certificate (mutual TLS) zaroori hoga (G-15).
+- Temporary ingest service ke liye pehle jaisa: HTTPS, API key har 90 din, sirf platform ke IP.
 - IP aur device id **hash** karke bheje jayenge (salt platform ke paas). Hamein sirf ye chahiye ki do users ka hash same hai ya nahi.
 - User ka `name` scoring me use nahi hota. Platform chahe to ise bhejna band kar sakta hai.
-- Data client ke cloud account me encrypted rehta hai. Retention ke niyam Data Privacy aur Retention Policy me hain.
+- Data AWS (Singapore region) me encrypted rehta hai: disk encryption aur TLS. Live data 60 din baad apne aap hat jaata hai. Retention ke niyam Data Privacy aur Retention Policy me hain.
 
 ---
 
@@ -231,3 +251,4 @@ Naam aur contact sign-off ke time bhare jayenge.
 | Version | Date | Badlav |
 |---|---|---|
 | 1.0 | 10 Oct 2026 | Pehla draft |
+| 1.1 | 14 Oct 2026 | Live data ka raasta: platform seedha MongoDB replica set me likhega (`betting-data-ingest.prime1.one`, `fraud` DB, teen collections), `POST /ingest` sirf temporary. Retry ke niyam, agent ke faisle live data me nahi. Security: TLS, `client_writer`, IP allowlist ya mutual TLS. Naye gaps G-15 (egress IP) aur G-16 (schema aur volume) |

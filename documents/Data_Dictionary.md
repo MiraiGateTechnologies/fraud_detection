@@ -4,11 +4,11 @@
 | Item | Detail |
 |---|---|
 | Document | Data Dictionary |
-| Version | 1.0 (review ke liye draft) |
-| Date | 10 Oct 2026 |
+| Version | 1.1 (review ke liye draft) |
+| Date | 14 Oct 2026 |
 | Organisation | MiraiGate Technologies |
 | Profile ka data | 15 Sep se 8 Oct 2026: 56,425 risk events, 10.7 million bets, 50.7 million statement entries |
-| Related documents | Platform Data Contract; Data Quality aur Lineage; System SRS |
+| Related documents | Platform Data Contract; Data Quality aur Lineage; System SRS; MongoDB Replica Set SRS |
 
 **Is document me:**
 - har entity ke fields
@@ -41,8 +41,8 @@ erDiagram
 
 | Entity | Kahan se | Kahan rakha jaata hai |
 |---|---|---|
-| Risk event | Platform → ingest service (`POST /ingest`) | MongoDB `risk_events`; JSON exports |
-| Surveillance bundle (user, bets, statements) | Risk event ke andar | Risk event ke saath; MongoDB `user_data` |
+| Risk event | Temporary: platform → ingest service (`POST /ingest`). Live (Planned): platform seedha MongoDB replica set me likhta hai | Temporary: MongoDB `risk_events`, JSON exports. Live: replica set `fraud` DB (`surveillance`, `bets`, `statements`), 60 din; teen collections ke fields client se aane baaki |
+| Surveillance bundle (user, bets, statements) | Risk event ke andar | Risk event ke saath; MongoDB `user_data`. Live data me bets aur statements alag collections me aa sakte hain (schema Open) |
 | Reason item | Risk event ke andar | Risk event ke saath |
 | Feature row | Data processing (`1_features.py`, `prepare.py`) | `dataset.csv` |
 | Score | Fraud score model (`2_score.py`) | Scores file; panel `dashboard.json` |
@@ -430,3 +430,9 @@ Isliye user ki pehchaan `user_id` (numeric) se honi chahiye, aur master har requ
 
 - **Paisa:** Indian Rupee (₹). Bets aur statements me number string ke roop me aata hai, hum use number me badalte hain.
 - **Odds:** decimal (match odds / bookmaker). Fancy me run line/rate.
+
+## Change Log
+| Version | Date | Badlav |
+|---|---|---|
+| 1.0 | 10 Oct 2026 | Pehla draft |
+| 1.1 | 14 Oct 2026 | Live data ka source aur jagah (MongoDB replica set) entity table me |

@@ -4,10 +4,10 @@
 | Item | Detail |
 |---|---|
 | Document | Incident Response Playbook |
-| Version | 1.0 (review ke liye draft) |
-| Date | 10 Oct 2026 |
+| Version | 1.1 (review ke liye draft) |
+| Date | 14 Oct 2026 |
 | Organisation | MiraiGate Technologies |
-| Related documents | Service Levels aur Timing; Deployment, Backup aur DR Runbook; Monitoring aur Drift Plan; Access Control aur Security Design |
+| Related documents | Service Levels aur Timing; Deployment, Backup aur DR Runbook; MongoDB Replica Set SRS; Monitoring aur Drift Plan; Access Control aur Security Design |
 
 ---
 
@@ -29,8 +29,8 @@ Scoring, data intake ya panel band ho jaye, ya security ka khatra ho, to team ko
 
 | Severity | Udaharan | Response | Fix ya workaround | Client ko khabar |
 |---|---|---|---|---|
-| Sev 1 | Panel poora band; data leak ya account hack ka shak; `review.db` kharab | 30 minute | 4 ghante | 1 ghante me |
-| Sev 2 | Daily batch fail; data 24 ghante se purana; galat model release; ingest feed band | 2 ghante | 1 business day | 4 ghante me |
+| Sev 1 | Panel poora band; replica set me koi primary nahi (platform likh nahi pa raha); data leak ya account hack ka shak; `review.db` kharab | 30 minute | 4 ghante | 1 ghante me |
+| Sev 2 | Daily batch fail; data 24 ghante se purana; galat model release; ingest feed band; replica set ka ek member down | 2 ghante | 1 business day | 4 ghante me |
 | Sev 3 | Ek page ya filter galat; reason ka text galat; chhoti UI kami | 1 business day | Agli release | Weekly summary me |
 
 Pakka na ho to upar wali severity maanein; baad me ghata sakte hain.
@@ -138,6 +138,8 @@ docker compose logs --tail 200 api
 3. Service theek hai par records nahi aa rahe: platform IT ko batao (feed ya API key ka masla). Security group me platform ka IP badla to nahi?
 4. Theek hone ke baad platform se kehna ki gap wale time ke records dobara bheje. Same `_id` dobara aane se duplicate nahi bante.
 
+Live data (MongoDB replica set) me naye records na aa rahe hon to IR-11.
+
 ### IR-05: Kharab Data Batch (schema badla, counts ajeeb, bahut records bina data)
 **Severity:** Sev 2
 
@@ -202,7 +204,19 @@ Inhe delete ya edit mat karo.
 5. Review aur sudhaar.
 
 ### IR-10: Server Poora Kho Gaya
-**Severity:** Sev 1. Runbook R-03 (panel) ya R-04 (MongoDB).
+**Severity:** Sev 1. Runbook R-03 (panel), R-04 (temporary ingest MongoDB) ya R-06 (replica set ke dono data servers).
+
+### IR-11: Replica Set Member Down ya Primary Nahi
+**Severity:** Sev 2 agar ek member down hai aur platform likh pa raha hai; Sev 1 agar koi primary nahi.
+
+1. Jo data server chal raha hai uspe SSH karke `admin` se:
+```bash
+mongosh "mongodb://localhost:27017/admin?tls=true&tlsCAFile=/etc/mongodb/tls/ca.pem" -u admin --eval 'rs.status().members.map(m => [m.name, m.stateStr, m.health])'
+```
+2. **Ek PRIMARY hai** (Sev 2): platform ke writes chal rahe hain. Gira hua server theek karo (EC2 console: status checks, reboot). Wapas aane pe woh khud sync ho jaata hai (Runbook M-02). 24 ghante se zyada band rahe to uske votes 0 kar do (MongoDB Replica Set SRS, OPS-06).
+3. **Koi PRIMARY nahi** (Sev 1): do member down hain, bacha hua server read-only hai. Pehle koi ek server wapas laao; aate hi election hoga aur writes chalu honge. Dono data servers gaye hon to Runbook R-06. Platform IT ko batao ki data apne paas rakh ke baad me likhe.
+4. Platform likh pa raha hai par records nahi aa rahe: platform IT ko batao; security group me platform ka IP badla to nahi? (`sg-mongo`, port 27017)
+5. Theek hone ke baad platform se gap wale time ka data confirm karo. Fixed `_id` ki wajah se duplicate nahi banenge.
 
 ---
 
@@ -257,3 +271,4 @@ Inhe delete ya edit mat karo.
 | Version | Date | Badlav |
 |---|---|---|
 | 1.0 | 10 Oct 2026 | Pehla draft |
+| 1.1 | 14 Oct 2026 | MongoDB replica set: severity me naye udaharan, IR-04 ka pointer, IR-10 me R-06, naya IR-11 |

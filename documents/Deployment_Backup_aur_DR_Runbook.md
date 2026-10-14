@@ -4,11 +4,11 @@
 | Item | Detail |
 |---|---|
 | Document | Deployment, Backup aur DR Runbook |
-| Version | 1.0 (review ke liye draft) |
-| Date | 10 Oct 2026 |
+| Version | 1.1 (review ke liye draft) |
+| Date | 14 Oct 2026 |
 | Organisation | MiraiGate Technologies |
 | Kaun use karega | MiraiGate admin |
-| Related documents | System Architecture Document; Incident Response Playbook; Access Control aur Security Design |
+| Related documents | System Architecture Document; MongoDB Replica Set SRS; Incident Response Playbook; Access Control aur Security Design |
 
 **Placeholders:**
 - `<server address>`, `<key.pem>`, `<bucket>` ki jagah asli values admin ke paas hain. Wo is document me kabhi nahi likhi jaati.
@@ -22,7 +22,8 @@
 |---|---|---|---|
 | `review.db` (decisions, history, pattern answers, notes) | Panel server `/opt/fraud-panel/data/` | **Nahi** | Sabse ahem |
 | `users.db` (accounts, sessions, sign-in log) | Panel server, same folder | Accounts dobara ban sakte hain; sign-in history nahi | Ahem |
-| MongoDB `risk_events`, `user_data` | Ingest server, Docker volume `mongo_data` | Sirf agar platform dobara bheje | Ahem |
+| Live data: replica set `fraud` DB (`surveillance`, `bets`, `statements`) | MongoDB replica set, Singapore: 2 data servers | Doosre server pe live copy hai; dono gayein to snapshot (3 din) ya platform dobara likhe | Ahem (60 din ka data) |
+| Temporary ingest MongoDB `risk_events`, `user_data` | Ingest server, Docker volume `mongo_data` | Sirf agar platform dobara bheje | Ahem |
 | JSON exports | Workstation | MongoDB se | Medium |
 | `dashboard.json`, `activity.db` | Panel server + workstation | Haan, `build_data.py` se (~5–6 min) | Kam |
 | Models aur datasets | Workstation | Haan, code + exports se | Medium |
@@ -37,6 +38,7 @@
 - Domain ka DNS aur front proxy ka access
 - S3 bucket ka naam; panel server pe IAM role jisme bucket pe `s3:PutObject` ho
 - Ingest service ki API key aur MongoDB password (sirf server ki `.env` me)
+- Replica set: teeno servers ki SSH key (`mongo-key`), `betting-data-ingest.prime1.one` ke DNS ka access, aur AWS Secrets Manager (`mongo/*`: passwords, keyFile, CA key)
 
 ---
 
@@ -204,6 +206,31 @@ docker compose restart api
 
 ---
 
+## 4A. Live Data: MongoDB Replica Set (Singapore)
+
+Create karne ke poore steps MongoDB Replica Set SRS, Section 11 me hain. Yahan sirf roz ke kaam.
+
+### M-01: Health
+Kisi data server pe SSH karke, `admin` user se:
+```bash
+mongosh "mongodb://localhost:27017/admin?tls=true&tlsCAFile=/etc/mongodb/tls/ca.pem" -u admin --eval 'rs.status().members.map(m => [m.name, m.stateStr, m.health])'
+```
+Ek PRIMARY, ek SECONDARY aur ek ARBITER dikhna chahiye, sab `health: 1`. Lag dekhne ke liye `rs.printSecondaryReplicationInfo()`.
+
+### M-02: Ek Server Gira
+- Primary gira: 10–12 second me doosra data server apne aap primary ban jaata hai. Kuch nahi karna; platform ka driver khud naye primary pe likhta hai.
+- Secondary ya arbiter gira: likhna chalta rehta hai. Alert aayega.
+- Dono case me gira hua server theek karo (EC2 console: status checks, reboot). Wapas aane pe woh khud secondary ban ke oplog se baraabar ho jaata hai (oplog 48 ghante ka hai).
+- Koi data server 24 ghante se zyada band rahe to uske votes 0 aur priority 0 kar do (MongoDB Replica Set SRS, OPS-06); wapas aane pe 1, 1.
+
+### M-03: OS ya MongoDB Update
+Ek-ek karke, is order me: arbiter → secondary → primary. Primary se pehle `rs.stepDown()` chalao, 15 second ruko, phir update. Har server ke baad M-01.
+
+### M-04: Teesra Data Server Jodna
+MongoDB Replica Set SRS, Section 10. Downtime nahi hota.
+
+---
+
 ## 5. Backups
 
 | Kya | Kaise | Kab | Kahan | Rakhna | Status |
@@ -211,7 +238,8 @@ docker compose restart api
 | `review.db` | `backup-review-db` (SQLite `.backup`, phir S3) | Roz 23:30 IST (cron) | `s3://<bucket>/review-db/review_<YYYYMMDD_HHMM>.db` | 90 din (S3 lifecycle, proposal) | Script bana hua; live pe bucket aur IAM role confirm karna hai |
 | `users.db` | Same script me jodna hai | Roz 23:30 IST | `s3://<bucket>/users-db/` | 90 din | **Gap: abhi backup nahi** |
 | Panel server disk | EBS snapshot (EC2 Lifecycle Manager) | Har hafte | AWS | 4 snapshots | Recommend kiya; confirm karna hai |
-| MongoDB | `mongodump --archive --gzip` | Roz 03:00 (cron, proposal) | Ingest server `~/backups`, phir S3 | 30 din | Command likha hai; cron confirm karna hai |
+| Live data (replica set) | EBS snapshot, dono data volumes (Data Lifecycle Manager, tag `backup=mongo`) | Roz | AWS | 3 din | Setup karna hai (MongoDB Replica Set SRS, Step 13) |
+| Temporary ingest MongoDB | `mongodump --archive --gzip` | Roz 03:00 (cron, proposal) | Ingest server `~/backups`, phir S3 | 30 din | Command likha hai; cron confirm karna hai |
 | Models, datasets, run reports | Copy | Har retrain | Abhi workstation; target S3 registry | Hamesha | Abhi manual |
 
 **Backup check (har hafte):**
@@ -249,7 +277,7 @@ sudo systemctl start fraud-panel
 5. Front proxy / DNS ko naye server pe point karo.
 6. P-05 se check karo; ek reviewer se sign-in aur ek purana decision dikhne ki pushti karwao.
 
-### R-04: MongoDB Restore
+### R-04: Temporary Ingest MongoDB Restore
 ```bash
 docker compose exec -T mongo mongorestore -u <user> -p <password> --authenticationDatabase admin --archive --gzip --drop < <backup file>
 ```
@@ -261,6 +289,15 @@ Password command history me na rahe, iska dhyan rakho (jaise prompt se dena). Ba
 - P-04 poora chalao.
 
 Isiliye target me models aur datasets S3 registry me rakhe jayenge.
+
+### R-06: Replica Set ke Dono Data Servers Kho Jayein
+Ek server gire to restore nahi karna; woh wapas aake khud sync hota hai (M-02). Ye sirf tab jab `mongo-1` aur `mongo-2` dono gaye hon.
+
+1. Sabse naye EBS snapshot se do naye 200 GB volumes banao (Singapore me).
+2. Naye instances same naam, same security group aur same spec se launch karo (MongoDB Replica Set SRS, Step 4), aur Elastic IPs dobara jodo. DNS ke naam wahi rahenge, isliye replica set ki config bina badlav ke chal jaati hai.
+3. Snapshot wale volumes `/data` pe mount karo, `mongod` chalu karo, M-01 se check karo.
+4. Platform ko batao ki snapshot ke baad ka data (24 ghante tak) dobara likhe. Fixed `_id` ki wajah se duplicate nahi banenge.
+5. Arbiter theek ho to kuch nahi; gaya ho to `rs.addArb()` se naya jodo.
 
 ---
 
@@ -278,7 +315,9 @@ Isiliye target me models aur datasets S3 registry me rakhe jayenge.
 | `review.db` kharab | Decisions nahi dikhte | R-01 | 1 ghanta |
 | Panel server kho gaya | Panel band | R-03 | 4 ghante |
 | Ingest server band | Naya data nahi aata; panel chalta rehta hai | I-02, I-03; platform se dobara bhejne ki request | 4 ghante |
-| AWS region problem | Sab band | Naye region me R-03 + R-04 (S3 backup cross-region copy ho to) | 1 business day |
+| Replica set ka ek server gira | Kuch nahi; primary gira to 10–12 second ka failover | M-02; server theek karo, khud sync | Minutes |
+| Replica set ke dono data servers gaye | Live data band; platform likh nahi pata | R-06 | 4 ghante |
+| AWS region problem (Mumbai ya Singapore) | Us region ka sab band | Naye region me R-03 + R-04 / R-06 (snapshot ya S3 backup cross-region copy ho to) | 1 business day |
 
 ---
 
@@ -317,8 +356,11 @@ Isiliye target me models aur datasets S3 registry me rakhe jayenge.
 | 4 | MongoDB ka roz backup cron aur S3 copy | MiraiGate admin |
 | 5 | Ingest API pe HTTPS | MiraiGate admin |
 | 6 | Pehla restore test | MiraiGate admin |
+| 7 | Replica set ke roz ke EBS snapshots (Lifecycle Manager) chalu karna | MiraiGate admin |
+| 8 | Replica set ka pehla failover test (`rs.stepDown()`) aur R-06 ka ek test | MiraiGate admin |
 
 ## Change Log
 | Version | Date | Badlav |
 |---|---|---|
 | 1.0 | 10 Oct 2026 | Pehla draft |
+| 1.1 | 14 Oct 2026 | Live data ka MongoDB replica set: Section 4A (M-01 se M-04), backup row (EBS snapshot 3 din), R-06, DR scenarios, open actions 7–8 |

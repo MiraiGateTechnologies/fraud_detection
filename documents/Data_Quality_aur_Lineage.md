@@ -4,11 +4,11 @@
 | Item | Detail |
 |---|---|
 | Document | Data Quality aur Lineage |
-| Version | 1.0 (review ke liye draft) |
-| Date | 10 Oct 2026 |
+| Version | 1.1 (review ke liye draft) |
+| Date | 14 Oct 2026 |
 | Organisation | MiraiGate Technologies |
 | Profile ka data | 9 exports, 15 Sep se 8 Oct 2026 (56,425 unique requests) |
-| Related documents | Data Dictionary; Platform Data Contract; Continuous Learning aur Retraining Design |
+| Related documents | Data Dictionary; Platform Data Contract; MongoDB Replica Set SRS; Continuous Learning aur Retraining Design |
 
 **Status ka matlab:** **Bana hua** = abhi chal raha hai; **Planned** = automation ke saath banega.
 
@@ -26,7 +26,9 @@ Ek kharab batch chupchaap scores badal deta hai. Ye document do cheezein tay kar
 
 ```mermaid
 flowchart TD
-    A[Platform] -->|POST /ingest| B[(Ingest service: MongoDB risk_events)]
+    A[Platform] -->|POST /ingest, temporary| B[(Ingest service: MongoDB risk_events)]
+    A -->|Planned: MongoDB driver, har ~10 s| RS[(MongoDB replica set:<br/>surveillance, bets, statements)]
+    RS -->|Planned: reader, read-only, secondary se| D
     B -->|JSON export| C[Raw exports: risk_events_YYYY-MM-DD.json]
     C --> D[prepare.py: dedupe, features, labels]
     D --> E[dataset.csv + fraud_examples]
@@ -47,8 +49,10 @@ flowchart TD
 ### 2.1 Stages
 | # | Stage | Input | Code | Output | Status |
 |---|---|---|---|---|---|
-| 1 | Intake | Platform stream | Ingest service | MongoDB `risk_events`, `user_data` | Bana hua |
-| 2 | Export | MongoDB | Manual export | `fraud_ingest/data/risk_events_<date>.json` | Bana hua (manual) |
+| 1 | Intake (temporary source) | Platform stream | Ingest service | MongoDB `risk_events`, `user_data` | Bana hua |
+| 1a | Live intake | Platform, MongoDB driver (har ~10 second) | MongoDB replica set, `fraud` DB | `surveillance`, `bets`, `statements` (60 din, TTL) | Planned (replica set ban raha hai) |
+| 2 | Export (temporary source) | MongoDB | Manual export | `fraud_ingest/data/risk_events_<date>.json` | Bana hua (manual) |
+| 2a | Live read | Replica set secondary (`fraud_reader`) | Reader job, watermark ke saath | Local store / `raw/date=YYYY-MM-DD/` | Planned |
 | 3 | Dataset | Saare exports (`SOURCES` list) | `pattern_detection/data_prep/prepare.py` | `dataset.csv`, `fraud_examples.csv/json`, `summary.txt` | Bana hua |
 | 4 | Pattern rules | `dataset.csv` | `rules/step4_rules.py` | `rules.json`, `rule_results.csv` | Bana hua |
 | 5 | Pattern score | Rules + dataset | `scoring/step5_score.py` | `score_model.joblib`, `scores.csv` | Bana hua |
@@ -64,7 +68,7 @@ flowchart TD
 | Key | Kahan se kahan tak | Kaam |
 |---|---|---|
 | `_id` (record_id) | Platform → dataset → scores → panel → decisions | Har request ko har stage pe jodta hai |
-| `batch_id` | Ingest service | Kaunse ingest batch me aaya |
+| `batch_id` | Ingest service (sirf temporary source; live data me nahi) | Kaunse ingest batch me aaya |
 | Export file ka naam | Raw → `prepare.py` ki `SOURCES` list | Kaunsi file se aaya |
 | Model version | Anomaly `current_version.json`; Fraud % file ka time | Kaunse model ne score diya |
 | "Model updated / Data up to" | `dashboard.json` → panel sidebar | Panel kis run ka hai |
@@ -174,3 +178,4 @@ Koi count na mile to release nahi hoga aur run report me farak likha jayega.
 | Version | Date | Badlav |
 |---|---|---|
 | 1.0 | 10 Oct 2026 | Pehla draft |
+| 1.1 | 14 Oct 2026 | Live data ka raasta (MongoDB replica set) lineage diagram aur stages 1a, 2a me |

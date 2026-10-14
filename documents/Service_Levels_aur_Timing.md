@@ -4,11 +4,11 @@
 | Item | Detail |
 |---|---|
 | Document | Service Levels aur Timing |
-| Version | 1.0 (review ke liye draft) |
-| Date | 10 Oct 2026 |
+| Version | 1.1 (review ke liye draft) |
+| Date | 14 Oct 2026 |
 | Organisation | MiraiGate Technologies |
 | Data period | 15 Sep se 8 Oct 2026 (24 din, 56,425 requests) |
-| Related documents | System SRS; Platform Data Contract; Continuous Learning aur Retraining Design; Monitoring aur Drift Plan |
+| Related documents | System SRS; Platform Data Contract; MongoDB Replica Set SRS; Continuous Learning aur Retraining Design; Monitoring aur Drift Plan |
 
 **Status ka matlab:**
 - **Abhi** = aaj aisa chal raha hai
@@ -77,7 +77,7 @@ Ye request bante hi (`createdAt`) se agent ke faisle (`action_time`) tak ka time
 | Agent ke faisle se ingest service tak | 1.8 second | 10.7 second |
 | Request bante hi se ingest service tak | 2.8 minute | 39.6 minute |
 
-**Sabse ahem baat:** platform har request ko **agent ka faisla hone ke baad** bhejta hai. Isliye aaj score agent ke faisle me madad nahi kar sakta; wo sirf baad me review aur seekhne ke kaam aata hai. Near real-time path (Section 3.1) ke liye platform ko request **bante hi** bhejni hogi (Platform Data Contract, gap G-01).
+**Sabse ahem baat:** platform har request ko **agent ka faisla hone ke baad** bhejta hai. Isliye aaj score agent ke faisle me madad nahi kar sakta; wo sirf baad me review aur seekhne ke kaam aata hai. Near real-time path (Section 3.1) ke liye platform ko request **bante hi** bhejni hogi (Platform Data Contract, gap G-01). Live data me platform ye seedha hamare MongoDB replica set me likhega (har ~10 second); neeche "ingest" ki jagah wahi replica set hai.
 
 ---
 
@@ -85,7 +85,7 @@ Ye request bante hi (`createdAt`) se agent ke faisle (`action_time`) tak ka time
 
 ```mermaid
 flowchart LR
-    A[Request bani] -->|Target: 10 sec| B[Ingest service]
+    A[Request bani] -->|Target: 10 sec| B[MongoDB replica set]
     B -->|Target: 30 sec p95| C[Near real-time score]
     C --> D[Agent ki screen / API]
     B -->|Roz 03:00 IST cut-off| E[Daily batch]
@@ -96,7 +96,7 @@ flowchart LR
 ### 3.1 Near Real-time Scoring (Planned)
 | Item | Target |
 |---|---|
-| Platform se request ka aana | Request bante hi, 10 second ke andar |
+| Platform se request ka aana (replica set me likhna) | Request bante hi, 10 second ke andar |
 | Request aane se score milne tak | p95 30 second, p99 60 second |
 | Throughput | 120 requests/minute (dekhe gaye peak 62/minute ka 2 guna) |
 | Roz ki capacity | 5,000 requests bina hardware badle |
@@ -109,7 +109,7 @@ flowchart LR
 | Step | Time (IST) |
 |---|---|
 | Data cut-off aur run shuru | 03:00 |
-| Ingest service se naye records ka pull | 03:00–03:15 |
+| Replica set (secondary) se naye records padhna | 03:00–03:15 |
 | Validation aur features | 03:15–03:40 |
 | Current model se scoring | 03:40–04:00 |
 | Panel data ka release (release agent har 10 minute dekhta hai) | 04:00–04:30 |
@@ -167,7 +167,9 @@ Reviewers ke kaam ke ghante client batayega. Ye targets unhi ghanton me gine jay
 | Kya hua | System kya karega | Kaun jawab dega | Kitni der me |
 |---|---|---|---|
 | Real-time score 60 second me nahi aaya | Withdrawal chalta rahega (fail-open); request batch me score hogi | Automatic | – |
-| Daily pull fail hua (network) | 1, 5 aur 15 minute ke gap pe 3 retry | Automatic, phir on-call | Alert 15 minute me |
+| Replica set se padhna fail hua (network) | 1, 5 aur 15 minute ke gap pe 3 retry | Automatic, phir on-call | Alert 15 minute me |
+| Replica set ka primary gira | 10–12 second me doosra server apne aap primary; platform ka driver khud naye primary pe likhta hai, fail hue writes retry | Automatic; MiraiGate on-call gira hua server theek kare | Alert turant; server theek 1 business day me |
+| Replica set ka secondary ya arbiter gira | Likhna chalta rehta hai; sirf copy ya vote ruka | MiraiGate on-call | Response 4 ghante |
 | Data validation fail (batch quarantine) | Panel pichhla data dikhata rahega; sidebar me "Data up to" purani date dikhegi | MiraiGate data team | 1 business day me fix |
 | Daily batch 05:00 IST tak release nahi hua | Alert; panel pichhla data dikhata rahega | MiraiGate on-call | Response 2 ghante |
 | Retrain ka quality gate fail | Current model chalta rahega; naya data current model se score hoga | MiraiGate data team | Report usi din |
@@ -180,8 +182,8 @@ Reviewers ke kaam ke ghante client batayega. Ye targets unhi ghanton me gine jay
 
 | Severity | Udaharan | Response | Fix ya workaround |
 |---|---|---|---|
-| Sev 1 | Panel band; real-time scoring band; data leak ka shak | 30 minute | 4 ghante |
-| Sev 2 | Daily batch fail; data 24 ghante se purana; galat model release | 2 ghante | 1 business day |
+| Sev 1 | Panel band; real-time scoring band; replica set me koi primary nahi (platform likh nahi pa raha); data leak ka shak | 30 minute | 4 ghante |
+| Sev 2 | Daily batch fail; data 24 ghante se purana; galat model release; replica set ka ek member down | 2 ghante | 1 business day |
 | Sev 3 | Ek page ya filter galat; reason ka text galat | 1 business day | Agli release |
 
 Har Sev 1 aur Sev 2 ke baad 3 business days me incident review likha jayega.
@@ -198,6 +200,9 @@ Har Sev 1 aur Sev 2 ke baad 3 business days me incident review likha jayega.
 | Server disk snapshot | Har hafte |
 | Restore test | Har mahine |
 | Model aur panel releases | Har version rakha jayega; rollback 5 minute me |
+| Live data (replica set) | Do servers pe live copy (lag ~10 ms); roz EBS snapshot, 3 din |
+| Replica set failover | 10–12 second, apne aap |
+| Replica set RPO | Ek server gire: kuch millisecond ke writes (rollback file me save). Dono data servers gayein: 24 ghante (snapshot) |
 
 ---
 
@@ -229,3 +234,9 @@ Har Sev 1 aur Sev 2 ke baad 3 business days me incident review likha jayega.
 | 3 | Reviewer response ke targets (Section 3.5) | Upar wale proposal |
 | 4 | Maintenance window | Raat 02:00–05:00 IST |
 | 5 | Alerts kahan jayein: email ya chat | Email |
+
+## Change Log
+| Version | Date | Badlav |
+|---|---|---|
+| 1.0 | 10 Oct 2026 | Pehla draft |
+| 1.1 | 14 Oct 2026 | Live data MongoDB replica set se: service path, daily batch ka source, failover ke targets aur deadline-miss ke rows, severity, backup table |

@@ -5,10 +5,10 @@
 | Item              | Detail                                                                                                                |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Document          | Software Requirements Specification                                                                                   |
-| Version           | 1.1                                                                                                                   |
-| Date              | 10 Oct 2026                                                                                                           |
+| Version           | 1.2                                                                                                                   |
+| Date              | 14 Oct 2026                                                                                                           |
 | Organisation      | MiraiGate Technologies                                                                                                |
-| Related documents | Fraud Review Panel SRS; Continuous Learning Automation Design; Zaroori Documents list (`fraud_detection_prep_doc.md`) |
+| Related documents | Fraud Review Panel SRS; Continuous Learning Automation Design; Zaroori Documents list (`fraud_detection_prep_doc.md`); MongoDB Replica Set SRS |
 
 **Requirement status ka matlab:**
 
@@ -16,7 +16,9 @@
 - **Planned** = design ho gaya hai, banana baaki hai
 - **Open** = faisla baaki hai (Section 12)
 
-**Version 1.1 me kya badla:** abhi ka data (ingest service / MongoDB / JSON export) ab **temporary data source** maana gaya hai. Asli kaam **real data source** (platform ki nayi API) pe hoga, jisme approve/reject aur agent ke faisle wale fields nahi aayenge. Poori list end me Change Log me hai.
+**Version 1.2 me kya badla:** real data source ab platform ki API nahi, **hamara MongoDB replica set** hai. Client platform live data seedha usme likhega (har ~10 second), aur system wahan se padhega. Replica set AWS Singapore me hai, naam `betting-data-ingest.prime1.one`; poori detail MongoDB Replica Set SRS me. Approve/reject aur agent ke faisle wale fields live data me pehle jaise hi nahi aayenge.
+
+**Version 1.1 me kya badla:** abhi ka data (ingest service / MongoDB / JSON export) ab **temporary data source** maana gaya hai. Asli kaam real data source pe hoga, jisme approve/reject aur agent ke faisle wale fields nahi aayenge. Poori list end me Change Log me hai.
 
 ---
 
@@ -26,7 +28,7 @@
 
 Ye document poore Fraud Detection Platform ki requirements likhta hai. Isme ye sab aata hai:
 
-- platform ki real data API se data lena
+- platform ka live data MongoDB replica set se lena
 - bets aur statements se features banana
 - fraud patterns pakadna
 - har withdrawal request ko 0 se 99 ka Fraud % dena
@@ -37,7 +39,7 @@ Ye document poore Fraud Detection Platform ki requirements likhta hai. Isme ye s
 
 **System kya karega:**
 
-- Platform ki real data API se har withdrawal request ko uske user ke bets aur statements ke saath lena (hum API se pull karenge).
+- Platform har withdrawal request ko uske user ke bets aur statements ke saath seedha hamare MongoDB replica set me likhega; system wahan se padhega.
 - Har request ko Fraud % dena, aur saath me wajah (reasons) batana.
 - Jin players ka score 60% ya zyada hai, unhe review queue me dikhana.
 - Reviewers ko statements, bets aur pichhli requests dekh ke **Fraud / Not fraud** faisla dene dena.
@@ -55,7 +57,7 @@ Ye document poore Fraud Detection Platform ki requirements likhta hai. Isme ye s
 | Words                 | Meaning                                                                                                                                        |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | Request               | Platform ki ek withdrawal request, user ke bets aur statements ke saath                                                                        |
-| Real data source      | Platform ki nayi API (production). Saare withdrawals aayenge; approve/reject, remarks, reason list, locks aur action_time**nahi** aayenge      |
+| Real data source      | Hamara MongoDB replica set (`betting-data-ingest.prime1.one`, AWS Singapore), jisme client platform live data seedha likhta hai. Saare withdrawals aayenge; approve/reject, remarks, reason list, locks aur action_time **nahi** aayenge. Detail: MongoDB Replica Set SRS      |
 | Temporary data source | Abhi ka ingest service (MongoDB) aur uske JSON exports. Sirf platform ke flag kiye withdrawals, agent ke faisle ke saath. Asli source nahi hai |
 | Historical data       | Temporary source ka 15 Sep 2026 se ab tak ka data, jisme agent ke faisle hain. Shuruaati training labels isi se bane                           |
 | Agent                 | Client ka staff jo platform pe withdrawal approve/reject karta hai. Uske faisle sirf temporary source me dikhte hain                           |
@@ -73,6 +75,7 @@ Ye document poore Fraud Detection Platform ki requirements likhta hai. Isme ye s
 
 - Fraud Review Panel: Software Requirements Specification
 - Fraud Detection Platform: Continuous Learning Automation Design
+- MongoDB Replica Set SRS (live data store)
 - Panel README (`dashboard_github/fraud_detection/panel/README.md`)
 - Fraud score README (`fraud_score/README.md`), data preparation README (`pattern_detection/data_prep/README.md`)
 
@@ -86,7 +89,8 @@ System chaar hisson me bata hai:
 
 ```mermaid
 flowchart LR
-    R[Platform: real data API] -->|pull, saare withdrawals| C[Data processing + features]
+    R[Client platform] -->|live data, seedha likhta hai| M[(MongoDB replica set)]
+    M -->|saare withdrawals, read| C[Data processing + features]
     T[Temporary source: ingest service + MongoDB] -.->|historical labels, kuch time saath| C
     C --> D[Models: pattern, anomaly, fraud score]
     D -->|scores + reasons| E[Fraud Review panel]
@@ -95,16 +99,16 @@ flowchart LR
 ```
 
 1. **Data intake:**
-   - **Real data source:** platform ki nayi API se hum har withdrawal request pull karenge (Planned; API ki detail aani baaki hai).
+   - **Real data source:** client platform har withdrawal request seedha hamare MongoDB replica set me likhega (database `fraud`; collections `surveillance`, `bets`, `statements`; har ~10 second). System secondary server se padhega (Planned; replica set ban raha hai, schema aur volume client se aane baaki hain).
    - **Temporary data source:** abhi platform har flag hui withdrawal ko ingest service (`POST /ingest`) pe bhejta hai, jo MongoDB me save hoti hai; wahan se JSON export.
-   - Ye source asli nahi hai. Real API aane ke baad kuch time saath chalega (milaan ke liye), phir band hoga. Iska purana data training labels ke liye rahega.
+   - Ye source asli nahi hai. Replica set chalu hone ke baad kuch time saath chalega (milaan ke liye), phir band hoga. Iska purana data training labels ke liye rahega.
 2. **Data processing aur models:** features banana, teen models chalana, score aur reasons nikalna.
 3. **Fraud Review panel:** reviewers ke liye web application (FastAPI + SQLite), EC2 pe, login ke saath.
 4. **Retraining:** labels banana, models train karna, check karna, aur naya model panel tak pahunchana.
 
 ### 2.2 Product Functions (short me)
 
-- Data intake (real API se pull) aur validation
+- Data intake (MongoDB replica set se padhna) aur validation
 - Feature engineering (59 features per request)
 - Pattern detection (P1–P4) aur pattern score
 - Anomaly score aur account groups
@@ -129,7 +133,7 @@ flowchart LR
 
 - **Panel server:** AWS EC2 t3.medium, Ubuntu 22.04/24.04, 40 GB gp3, nginx + systemd, panel `127.0.0.1:8080` pe.
 - **HTTPS:** domain ke aage wala proxy/CDN deta hai (`review-panel.api.savage1.one`).
-- **Real data API:** platform ki taraf; endpoint, authentication aur format abhi aane baaki hain (Open).
+- **Live data store:** MongoDB 8.0 replica set, AWS Singapore: 2 data servers (`r7g.large`, 200 GB) + 1 arbiter (`t4g.small`), teen alag AZ; TLS + authentication; naam `betting-data-ingest.prime1.one`. Detail: MongoDB Replica Set SRS.
 - **Temporary ingest service:** alag EC2, Go service + MongoDB (Docker), sirf API port bahar khula.
 - **Training:** abhi analysis workstation (Python 3.12, pandas, scikit-learn); Planned: alag training instance.
 - **Browser:** Chrome, Edge, Firefox, Safari ke current versions; desktop aur mobile.
@@ -148,10 +152,10 @@ flowchart LR
 
 ### 2.6 Assumptions aur Dependencies
 
-- Real API me approve/reject aur agent ke faisle wale fields chhod ke baaki sab abhi jaisa aayega: user (account kab bana, balance), master, white label, request, bets aur statements. Ye abhi ka maan hai; API ki detail aane pe confirm hoga (Open).
-- Real API se data hum pull karenge.
+- Live data me approve/reject aur agent ke faisle wale fields chhod ke baaki sab abhi jaisa aayega: user (account kab bana, balance), master, white label, request, bets aur statements. Ye abhi ka maan hai; teen collections ka schema client se aane pe confirm hoga (Open).
+- Client platform data seedha replica set me likhega (MongoDB driver, har ~10 second). Hum kisi API se pull nahi karenge; system replica set ke secondary se padhega.
 - Score har withdrawal request pe banega.
-- Temporary source real API ke saath kuch time chalega, phir band hoga.
+- Temporary source replica set ke saath kuch time chalega, phir band hoga.
 - Client ke reviewers panel me faisle aur reason likhenge. Real data me ye hi naye labels ka source hai.
 - AWS account, domain aur proxy client/MiraiGate ke control me hain.
 
@@ -170,7 +174,8 @@ flowchart LR
 
 | Interface                                                     | Direction       | Kaam                                              | Status                |
 | ------------------------------------------------------------- | --------------- | ------------------------------------------------- | --------------------- |
-| **Platform real data API** (hum pull karenge)                 | Andar           | Saare withdrawal requests, user, bets, statements | Planned (detail Open) |
+| **Platform → MongoDB replica set** (platform seedha likhta hai, MongoDB driver, TLS) | Andar | Saare withdrawal requests, user, bets, statements (`fraud` DB) | Planned (replica set ban raha hai; schema Open) |
+| Replica set → system (read-only user `fraud_reader`, secondary se) | Andar | Scoring aur training ke liye data padhna | Planned |
 | Platform → Ingest service`POST /ingest`, `POST /ingest/users` | Andar           | Flag kiye risk events (temporary source)          | Bana hua (temporary)  |
 | Ingest service JSON export                                    | Andar           | Temporary source ka data aur historical labels    | Bana hua (temporary)  |
 | Panel API (`/api/...`)                                        | Browser ↔ panel | Data, decisions, notes, login                     | Bana hua              |
@@ -199,12 +204,12 @@ flowchart LR
 
 |                 | Real data source                                                       | Temporary data source                                              |
 | --------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Kya hai         | Platform ki nayi API                                                   | Ingest service (MongoDB) + JSON exports                            |
-| Kaise aata hai  | Hum pull karenge                                                       | Platform push karta hai (`POST /ingest`); hum export nikaalte hain |
+| Kya hai         | Hamara MongoDB replica set (`betting-data-ingest.prime1.one`, Singapore) | Ingest service (MongoDB) + JSON exports                            |
+| Kaise aata hai  | Platform seedha likhta hai (MongoDB driver, har ~10 second); hum secondary se padhte hain | Platform push karta hai (`POST /ingest`); hum export nikaalte hain |
 | Kaunse requests | Saare withdrawals                                                      | Sirf platform ke flag kiye withdrawals                             |
 | Agent ke faisle | **Nahi** (status, remarks, reason, locks, action_time nahi)            | Haan                                                               |
-| Kaam            | Production scoring, panel, aage ki training (reviewer labels ke saath) | Historical labels, shuruaati training, real API se milaan          |
-| Kab tak         | Hamesha                                                                | Real API ke saath kuch time, phir band (kitna time: Open)          |
+| Kaam            | Production scoring, panel, aage ki training (reviewer labels ke saath) | Historical labels, shuruaati training, replica set se milaan       |
+| Kab tak         | Hamesha                                                                | Replica set ke saath kuch time, phir band (kitna time: Open)       |
 
 | ID     | Requirement                                                                                                                       | Status   |
 | ------ | --------------------------------------------------------------------------------------------------------------------------------- | -------- |
@@ -218,13 +223,14 @@ flowchart LR
 | ID     | Requirement                                                                                                                                                                               | Status                               |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | ING-01 | System har request ko uski unique id se ek hi baar rakhega; same request dobara aaye to latest version maana jayega.                                                                      | Bana hua (temporary); Planned (real) |
-| ING-02 | Real API se har request ke saath user, master, white label, request ka time, bets aur statements rakhe jayenge.                                                                           | Planned                              |
+| ING-02 | Replica set me aayi har request ke saath user, master, white label, request ka time, bets aur statements rakhe jayenge.                                                                           | Planned                              |
 | ING-03 | Temporary source ke records ke saath status, remarks, reason list, locks (`user_lock`, `withdrawal_lock`, `bet_void`) aur action_time bhi rakhe jayenge (sirf historical labels ke liye). | Bana hua                             |
-| ING-04 | System real API se naye requests tay schedule pe pull karega, watermark ke saath (jahan tak data aa chuka). Pull kitni der me: Open.                                                      | Planned                              |
+| ING-04 | System replica set ke secondary se naye records tay schedule pe padhega, watermark ke saath (time field, jahan tak data aa chuka). Kitni der me: Open.                                                      | Planned                              |
 | ING-05 | Har batch ka schema, count (7 din ke average se), bina data wale records ka hissa aur duplicates check honge; galat batch quarantine hoga aur alert jayega.                               | Planned                              |
 | ING-06 | Real data me agar status/remarks jaise fields kabhi aa bhi jayein, to wo score ya features me use nahi honge.                                                                             | Planned                              |
 | ING-07 | 15 Sep 2026 se pehle ke temporary records training me nahi liye jayenge (unme bets/statements bahut kam hain).                                                                            | Bana hua                             |
 | ING-08 | Manual JSON export temporary source ke chalne tak fallback ke roop me chalega.                                                                                                            | Bana hua                             |
+| ING-09 | Replica set me live data 60 din rehta hai (TTL). System jo data scoring aur training ke liye rakhna chahta hai, use 60 din ke andar apne store me le lega. | Planned |
 
 ### 4.3 Data Processing aur Features (FEA)
 
@@ -336,7 +342,7 @@ Review ke baad **Not fraud** wale 60%+ requests wapas normal me aate hain. 0–5
 | ID     | Requirement                                                                                                                                          | Status            |
 | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
 | MLO-01 | Retraining ka order: data preparation → pattern rules → pattern score → pattern test → anomaly weekly update → Fraud % model → scoring → panel data. | Bana hua (manual) |
-| MLO-02 | Roz data refresh: real API ke naye requests ko current models se score karke panel update karna.                                                     | Planned           |
+| MLO-02 | Roz data refresh: replica set ke naye requests ko current models se score karke panel update karna.                                                     | Planned           |
 | MLO-03 | Har hafte retrain, aur 25 naye reviewer decisions aate hi pehle bhi.                                                                                 | Planned           |
 | MLO-04 | Naya model tabhi lagega jab saare quality gates pass hon (Section 7.3); warna current model chalta rahega aur alert jayega.                          | Planned           |
 | MLO-05 | Har release ek versioned package hoga (models, data, metrics, label snapshot); panel server use khud pull karke ek hi baar me badlega.               | Planned           |
@@ -466,8 +472,8 @@ Ye numbers sirf platform ke **flag kiye** withdrawals pe hain. Saare withdrawals
 | NFR-P01 | Panel ka pehla load (dashboard data ~8 MB, gzip ke saath) normal internet pe 5 second se kam. Saare withdrawals aane pe data badhega; tab panel ka data page-wise load karna pad sakta hai (Open). |
 | NFR-P02 | Statements/bets tab ka ek page (100 rows) 1 second se kam me.                                                                                                                                      |
 | NFR-P03 | Decision submit 1 second se kam me save.                                                                                                                                                           |
-| NFR-P04 | Naya request panel me 26 ghante ke andar scored dikhe (roz ke pull aur refresh ke baad). Pull kitni der me hoga, ye tay hone pe ye target badlega (Open).                                          |
-| NFR-P05 | Roz kitne withdrawals aayenge, ye abhi pata nahi (Open). Capacity real API ka volume pata chalne ke baad tay hogi. Temporary source pe abhi ~2,000–4,800 flagged requests roz aate hain.           |
+| NFR-P04 | Naya request panel me 26 ghante ke andar scored dikhe (roz replica set se padhne aur refresh ke baad). Kitni der me padhna hai, ye tay hone pe ye target badlega (Open).                                          |
+| NFR-P05 | Roz kitne withdrawals aayenge, ye abhi pata nahi (Open). Capacity live data ka volume pata chalne ke baad tay hogi (MongoDB Replica Set SRS, Section 14). Temporary source pe abhi ~2,000–4,800 flagged requests roz aate hain.           |
 
 ### 8.2 Availability aur Reliability
 
@@ -478,7 +484,8 @@ Ye numbers sirf platform ke **flag kiye** withdrawals pe hain. Saare withdrawals
 | NFR-A03 | Scoring band ho to withdrawals ka kaam nahi rukna chahiye (fail-open); score sirf salah hai.       |
 | NFR-A04 | Review aur accounts database ka roz backup; restore ka test har mahine (Planned).                  |
 | NFR-A05 | Naye data ya code ka update panel ke decisions, notes aur accounts ko kabhi nahi chhuega.          |
-| NFR-A06 | Real API se pull fail ho to retry; data na aaye to panel pichhla data dikhata rahe aur alert jaye. |
+| NFR-A06 | Replica set se padhna fail ho to retry; data na aaye to panel pichhla data dikhata rahe aur alert jaye. |
+| NFR-A07 | Replica set ka koi ek server gire to bhi platform likhta rahe; primary gire to 10–12 second me apne aap naya primary bane (MongoDB Replica Set SRS). |
 
 ### 8.3 Security
 
@@ -491,14 +498,16 @@ Ye numbers sirf platform ke **flag kiye** withdrawals pe hain. Saare withdrawals
 | NFR-S05 | Sign-in pe nginx ki rate limit (10 per minute, burst 5) aur app ki lockout.             |
 | NFR-S06 | Client data wale browser responses cache na hon (`private, no-cache`).                  |
 | NFR-S07 | Keys aur passwords kabhi code ya chat me nahi; public repository me client data nahi.   |
-| NFR-S08 | Real API ke credentials sirf server ke secret store me; API call HTTPS pe.              |
+| NFR-S08 | Replica set ke users (`client_writer`, `fraud_reader`, `admin`) ke passwords sirf AWS Secrets Manager me; har connection TLS pe. |
+| NFR-S09 | Replica set ka port 27017 sirf client, reader aur aapas ke servers ke IP ke liye khula; SSH sirf admin ke IP se. |
 
 ### 8.4 Privacy aur Compliance
 
 | ID      | Requirement                                                                                                     |
 | ------- | --------------------------------------------------------------------------------------------------------------- |
 | NFR-C01 | India ke users ka personal data Digital Personal Data Protection Act, 2023 ke hisaab se.                        |
-| NFR-C02 | Data retention: raw data 12 mahine, features/datasets 24 mahine, reports aur registry hamesha (proposal, Open). |
+| NFR-C02 | Data retention: live data replica set me 60 din (TTL); historical raw data 12 mahine, features/datasets 24 mahine, reports aur registry hamesha (proposal, Open). |
+| NFR-C05 | Live data AWS Singapore region me rehta hai, yaani India ke bahar. Iske liye client aur legal counsel ki likhit approval chahiye (Open). |
 | NFR-C03 | PCI-DSS lagu nahi (card data nahi); GDPR sirf EU users hon to.                                                  |
 | NFR-C04 | Gaming aur AML ki zimmedariyan legal counsel se confirm hongi.                                                  |
 
@@ -537,7 +546,7 @@ Ye numbers sirf platform ke **flag kiye** withdrawals pe hain. Saare withdrawals
 
 | Entity                                  | Zaroori fields                                                                                                                                                                                                                                 |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Withdrawal request                      | Request id,`user_id`, `user_id_str`, `master_id_str`, `white_label_id_str`, `provider_id`, request ka time (`createdAt`), user, bets aur statements. Real API ke asli field naam API aane pe likhe jayenge                                     |
+| Withdrawal request                      | Request id,`user_id`, `user_id_str`, `master_id_str`, `white_label_id_str`, `provider_id`, request ka time (`createdAt`), user, bets aur statements. Live data ke asli field naam client ka schema aane pe likhe jayenge                                     |
 | Agent ka faisla (sirf temporary source) | `status`, `remarks`, `reason[]`, `user_lock`, `withdrawal_lock`, `bet_void`, `action_time`. **Real data me nahi aate**                                                                                                                         |
 | User                                    | `id`, `userid`, `name`, `balance`, `created_at`                                                                                                                                                                                                |
 | Bet                                     | `bet_id`, `sport_id`, `event_id`, `market_id`, `bet_market_type` (1 match odds, 2 bookmaker, 3 fancy), `selection_id`, `selection`, `selection_type` (back/lay), `odds`, `requested_odds`, `stake`, `p_l`, `liability`, `bet_status`, `reason` |
@@ -556,7 +565,7 @@ Ye numbers sirf platform ke **flag kiye** withdrawals pe hain. Saare withdrawals
 
 | Gap                                                                                        | Asar                                                            |
 | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| Real API ki detail (endpoint, auth, fields, paging, kitni der me naya data) abhi nahi aayi | Intake aur timing tay nahi ho sakte                             |
+| Live data ka schema (teen collections ke fields, time field) aur roz ka volume abhi nahi aaya | Indexes, TTL aur disk size tay nahi ho sakte; intake ki timing bhi nahi |
 | Real data me approve/reject aur agent ke faisle nahi aayenge (design se)                   | Naye labels sirf reviewers se; agent wale reasons nahi dikhenge |
 | Bets me time nahi                                                                          | Bet ka sequence aur late betting nahi dikhta                    |
 | IP / device nahi                                                                           | Same IP, multi-account aur device sharing nahi pakad sakte      |
@@ -564,13 +573,13 @@ Ye numbers sirf platform ke **flag kiye** withdrawals pe hain. Saare withdrawals
 | Bet status codes ka matlab nahi                                                            | Void / settled / cancelled bets alag nahi kar sakte             |
 | Andar wali`surveillance` list khaali                                                       | Platform ke apne flags nahi milte                               |
 
-Bets, IP, amount aur status codes wale gaps temporary source me dekhe gaye hain. Real API me ye hain ya nahi, API aane pe confirm hoga.
+Bets, IP, amount aur status codes wale gaps temporary source me dekhe gaye hain. Live data me ye hain ya nahi, schema aane pe confirm hoga.
 
 ---
 
 ## 10. Acceptance Criteria
 
-1. Real API se naye requests apne aap pull hon, bina code badle process hon, aur panel me scored dikhen.
+1. Replica set me aaye naye requests apne aap padhe jayein, bina code badle process hon, aur panel me scored dikhen.
 2. Real data me agent ke faisle wale fields na hon, tab bhi score, reasons aur panel sahi chalein.
 3. Dono sources me aane wali requests ka score same aaye (VAL-01).
 4. Panel ke saare pages sign-in ke baad hi khulein; galat password pe saaf error aaye.
@@ -607,16 +616,18 @@ Bets, IP, amount aur status codes wale gaps temporary source me dekhe gaye hain.
 | 3   | Retraining kab: weekly + 25 decisions?                                                           | Weekly + 25 decisions             |
 | 4   | Training kahan: alag instance, panel server, ya workstation?                                     | Alag instance                     |
 | 5   | Naya model apne aap lage ya admin approval se?                                                   | Gates pass ho to apne aap         |
-| 6   | Real API ki detail: endpoint, authentication, fields, paging, rate limit                         | Platform dega                     |
-| 7   | Real API se pull kitni der me (har kuch minute, har ghante, ya roz)?                             | Faisla baaki                      |
-| 8   | Roz kitne withdrawals aayenge?                                                                   | Pata nahi; real API aane pe       |
+| 6   | Live data ka schema: teen collections ke fields aur time field                                   | Client dega                       |
+| 7   | Replica set se kitni der me padhna (har kuch minute, har ghante, ya roz)?                        | Faisla baaki                      |
+| 8   | Roz kitne withdrawals / bets aayenge?                                                            | Pata nahi; client batayega        |
 | 9   | Saare withdrawals aane pe review queue ki limit (60%) wahi rahe?                                 | Volume pata hone ke baad          |
 | 10  | Temporary source kitne time saath chalega?                                                       | VAL-01 ki report ke baad          |
 | 11  | Real data ke bina review wale requests Fraud % model me genuine label ki tarah use hon? (LBL-09) | Faisla baaki                      |
 | 12  | Historical approved requests normal set me kab tak rahein? (NRM-04)                              | Faisla baaki                      |
 | 13  | Anomaly: v5 rakhein (zyada pakadta hai) ya v7 (kam galat alarm)?                                 | v5                                |
-| 14  | Data retention ke periods                                                                        | Raw 12 mahine, features 24 mahine |
+| 14  | Data retention ke periods                                                                        | Live data 60 din (replica set); historical raw 12 mahine; features 24 mahine |
 | 15  | Notifications kahan: email ya chat?                                                              | Email                             |
+| 16  | Live data India ke bahar (Singapore) rakhne ki approval                                          | Client + legal counsel            |
+| 17  | Client apna egress IP dega, ya replica set pe client certificate (mutual TLS) lagana padega?     | Pehle IP maangna                  |
 
 ---
 
@@ -676,3 +687,4 @@ Bets, IP, amount aur status codes wale gaps temporary source me dekhe gaye hain.
 | ------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1.0     | 10 Oct 2026 | Pehla version                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 1.1     | 10 Oct 2026 | Abhi ka ingest service / MongoDB / JSON export ab "temporary data source"; asli source platform ki nayi API (pull, saare withdrawals, bina approve/reject aur agent ke faisle wale fields). Naya Section 4.1 (data sources), 5.2 (normal data), 7.4 (real data pe go-live se pehle). Labels: reviewer decisions + historical labels; agent wale niyam sirf historical data pe. Calibration, rule limits aur anomaly model "normal" data pe. Panel ke agent wale hisse sirf historical data pe. Volume, pull ka time aur queue limit Open. Open issues update. |
+| 1.2     | 14 Oct 2026 | Real data source ab MongoDB replica set hai (AWS Singapore, `betting-data-ingest.prime1.one`): client platform live data seedha likhta hai, system secondary se padhta hai; API pull hata. Sections 1.1–1.3, 2.1, 2.2, 2.4, 2.6, 3.2, 4.1, 4.2 (ING-09), 8 (NFR-A07, S08, S09, C02, C05), 9.1, 9.3, 10, 12 update. Live data 60 din (TTL). Singapore me data rakhne ki approval aur client IP naye Open issues. |

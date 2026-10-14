@@ -42,11 +42,23 @@ Every page and API call needs a signed-in reviewer. Accounts and sessions live i
 - Passwords are stored as salted PBKDF2-SHA256 hashes and must have at least 8 characters.
 - Decisions and notes are saved under the signed-in account name.
 
+Each account is a **reviewer** or a **developer**:
+
+- A reviewer sees the scores, the reasons, the statements and bets, and the review tools. The platform agent's
+  handling of a request (decision, remark, platform reason), the training label and the reject counts are
+  not sent to reviewer accounts at all.
+- A developer also sees those: the agent's decision on the request page and in the tables, and a
+  "Developer view" box with the agent's remark and the platform reason.
+
+Accounts made before roles existed are reviewers.
+
 Manage accounts with `accounts.py` (on the server, use `sudo fraud-panel-users` instead of `python accounts.py`):
 
 ```bash
-python accounts.py add User1 User2     # asks for each password twice
-python accounts.py passwd User2        # new password; ends the user's session
+python accounts.py add User1 User2           # reviewers; asks for each password twice
+python accounts.py add --developer DevName   # a developer account
+python accounts.py role User2 developer      # change a role (reviewer or developer)
+python accounts.py passwd User2              # new password; ends the user's session
 python accounts.py remove User2
 python accounts.py list
 ```
@@ -104,9 +116,9 @@ All routes except sign-in need a session cookie.
 |---|---|---|
 | POST | `/api/login` | Sign in with `name` and `password`; sets the session cookie |
 | POST | `/api/logout` | Sign out |
-| GET | `/api/me` | Signed-in account |
+| GET | `/api/me` | Signed-in account and its role |
 | GET | `/api/session` | Session check used by the open panel; does not count as activity |
-| GET | `/api/dashboard` | Tables and figures |
+| GET | `/api/dashboard` | Tables and figures; without the agent's decisions for reviewer accounts |
 | GET | `/api/activity?key=<request id>&tab=statements` | Statements (or `tab=bets`) for a request |
 | GET | `/api/decisions` | Current decisions |
 | PUT | `/api/decisions` | Submit a decision: `decision` is `fraud` or `not_fraud`; `reason` is required |

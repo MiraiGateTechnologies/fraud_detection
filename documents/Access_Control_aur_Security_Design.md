@@ -4,10 +4,10 @@
 | Item | Detail |
 |---|---|
 | Document | Access Control aur Security Design |
-| Version | 1.0 (review ke liye draft) |
-| Date | 10 Oct 2026 |
+| Version | 1.1 (review ke liye draft) |
+| Date | 14 Oct 2026 |
 | Organisation | MiraiGate Technologies |
-| Related documents | System Architecture Document; Data Privacy aur Retention Policy; Audit Trail Specification; Incident Response Playbook |
+| Related documents | System Architecture Document; MongoDB Replica Set SRS; Data Privacy aur Retention Policy; Audit Trail Specification; Incident Response Playbook |
 
 **Status ka matlab:**
 - **Bana hua** = abhi chal raha hai
@@ -31,7 +31,7 @@ Ye document tay karta hai ki kaun kya dekh aur badal sakta hai, sign-in kaise ka
 
 | Class | Kya | Niyam |
 |---|---|---|
-| Restricted | Passwords, API keys, SSH keys, MongoDB password, session tokens | Sirf secret store me; kabhi code, chat, email ya documents me nahi |
+| Restricted | Passwords, API keys, SSH keys, MongoDB passwords, replica set keyFile aur CA key, session tokens | Sirf secret store me; kabhi code, chat, email ya documents me nahi |
 | Confidential | Users ke codes, bets, statements, deposits, withdrawals, scores, decisions, notes | Sirf sign-in ke baad; encrypted transit; repository me kabhi nahi |
 | Internal | Code, models, aggregate reports | MiraiGate aur client team |
 | Public | Kuch nahi | – |
@@ -47,7 +47,7 @@ Ye document tay karta hai ki kaun kya dekh aur badal sakta hai, sign-in kaise ka
 | Client risk lead | Client | Score limits approve, accounts ki approval |
 | MiraiGate admin | MiraiGate | Servers, accounts banana/hatana, release, rollback |
 | MiraiGate data team | MiraiGate | Data, models, retrain |
-| Platform (system) | Client platform | Ingest API pe data bhejna |
+| Platform (system) | Client platform | Temporary: ingest API pe data bhejna. Live: MongoDB replica set me `client_writer` se likhna |
 | Service accounts | `panel` Linux user, pipeline jobs (Planned) | Sirf apna kaam |
 
 ---
@@ -63,7 +63,8 @@ Ye document tay karta hai ki kaun kya dekh aur badal sakta hai, sign-in kaise ka
 | Reviewer accounts banana/hatana | – | – | Approve | Karta hai (server CLI) | – | – |
 | Panel server SSH | – | – | – | Haan (sirf apne IP se) | – | – |
 | Ingest API (`POST /ingest`) | – | – | – | Test | – | Haan (API key) |
-| MongoDB | – | – | – | Server ke andar se | Export ke liye | – |
+| Temporary ingest MongoDB | – | – | – | Server ke andar se | Export ke liye | – |
+| MongoDB replica set (live data) | – | – | – | `admin` (SSH + password) | Padhna (`fraud_reader`) | Likhna (`client_writer`: insert, update, find) |
 | S3 backups | – | – | – | Haan | – | – |
 | Workstation ka data | – | – | – | Haan | Haan | – |
 | Admin view (Planned): runs, rollback, approvals | – | Approve (patterns) | Approve (limits) | Haan | Dekh | – |
@@ -116,15 +117,15 @@ Abhi panel me saare accounts ke same rights hain. Admin ka kaam server CLI se ho
 
 ## 7. Servers aur Network
 
-| Control | Panel server | Ingest server |
-|---|---|---|
-| Bahar khule ports | 443, 80 (redirect) | API port, sirf client ke IP se (security group) |
-| SSH | Sirf key, sirf admin ke IP se | Same |
-| App kaise chalta hai | `panel` system user (no login shell), `127.0.0.1:8080` | Docker containers |
-| Database | SQLite files, folder 750, files 640 | MongoDB auth ke saath, port publish nahi |
-| systemd hardening | NoNewPrivileges, PrivateTmp, ProtectSystem=full, ProtectHome, sirf `data/` likh sakta | `restart: unless-stopped` |
-| Security updates | unattended-upgrades (roz) | Same (deploy notes) |
-| Logs | journald, nginx access log | Docker json logs, 50 MB × 3 |
+| Control | Panel server | Ingest server | MongoDB replica set (3 servers, ban raha hai) |
+|---|---|---|---|
+| Bahar khule ports | 443, 80 (redirect) | API port, sirf client ke IP se (security group) | 27017 sirf client aur reader ke IP se; 22 sirf admin ke IP se |
+| SSH | Sirf key, sirf admin ke IP se | Same | Sirf key (`mongo-key`), sirf admin ke IP se (setup ke dauraan thodi der khula, phir band) |
+| App kaise chalta hai | `panel` system user (no login shell), `127.0.0.1:8080` | Docker containers | `mongod` systemd service, `mongodb` user |
+| Database | SQLite files, folder 750, files 640 | MongoDB auth ke saath, port publish nahi | MongoDB 8.0: SCRAM auth + keyFile + TLS (`requireTLS`); port sirf tay IPs ke liye |
+| systemd hardening | NoNewPrivileges, PrivateTmp, ProtectSystem=full, ProtectHome, sirf `data/` likh sakta | `restart: unless-stopped` | MongoDB package ki default service; data alag encrypted volume `/data` pe |
+| Security updates | unattended-upgrades (roz) | Same (deploy notes) | unattended-upgrades; MongoDB update ek-ek member (arbiter → secondary → primary) |
+| Logs | journald, nginx access log | Docker json logs, 50 MB × 3 | `/var/log/mongodb/mongod.log` (rotate), journald |
 
 ---
 
@@ -141,6 +142,24 @@ Abhi panel me saare accounts ke same rights hain. Admin ka kaam server CLI se ho
 
 ---
 
+## 8A. MongoDB Replica Set (live data)
+
+| Control | Status |
+|---|---|
+| TLS har connection pe (`requireTLS`), hamare CA ke certificates | Planned (setup me) |
+| Authentication SCRAM-SHA-256; members ke beech `keyFile` | Planned |
+| Port 27017 sirf client, reader aur aapas ke servers ke IP ke liye; `0.0.0.0/0` nahi | Planned; client IP pe Gap S-11 |
+| `client_writer` sirf `fraud` DB me insert, update, find; delete aur drop nahi | Planned |
+| `fraud_reader` sirf padhna | Planned |
+| SSH sirf admin ke IP se, key pair se; setup ke baad `0.0.0.0/0` hatana | Planned; Gap S-12 |
+| EBS encryption; termination protection; data volume delete-on-termination off | Planned |
+| Passwords, keyFile, CA key sirf AWS Secrets Manager me | Planned |
+| Client IP na mile to client certificate (mutual TLS) | Open (Gap S-11) |
+
+Detail: MongoDB Replica Set SRS, Sections 4 aur 6.
+
+---
+
 ## 9. Secrets
 
 | Secret | Kahan rehna chahiye | Kahan kabhi nahi |
@@ -150,6 +169,8 @@ Abhi panel me saare accounts ke same rights hain. Admin ka kaam server CLI se ho
 | Ingest API key, MongoDB password | Ingest server ki `.env` | Code, documents |
 | S3 access | EC2 IAM role (keys nahi) | Files me access keys |
 | Server addresses | Admin ke notes | Public documents |
+| Replica set ke users ke passwords, keyFile, CA key | AWS Secrets Manager (`mongo/*`) | Code, documents, chat |
+| Replica set ki SSH key (`mongo-key.pem`) | Admin ke machine pe | Repository |
 
 **Gap S-04:** workstation pe ek notes file me server commands ke saath secrets bhi likhe hain. Inhe password manager me le jaana hai aur file se hatana hai.
 
@@ -164,6 +185,7 @@ Abhi panel me saare accounts ke same rights hain. Admin ka kaam server CLI se ho
 | Panel me user ka naam (`name`) nahi dikhaya jaata; sirf user code | Bana hua |
 | S3 backups: encryption at rest, public access band | Confirm karna hai (Gap S-05) |
 | EC2 disks (EBS) encrypted | Confirm karna hai (Gap S-05) |
+| Replica set: TLS aur EBS encryption | Planned (setup me) |
 | Workstation pe exports: disk encryption (BitLocker) | Confirm karna hai (Gap S-06) |
 | Exports aur CSV me masking | Data Privacy aur Retention Policy |
 
@@ -183,6 +205,8 @@ Abhi panel me saare accounts ke same rights hain. Admin ka kaam server CLI se ho
 | S-08 | Multi-factor sign-in nahi | Password leak pe access | Front proxy ya panel me MFA (proposal) | P2 |
 | S-09 | Reviewer khud password nahi badal sakta | Admin pe nirbharta | Panel me "change password" | P2 |
 | S-10 | Security alerts (bahut galat sign-ins) nahi jaate | Attack der se pata | Monitoring me alert | P2 |
+| S-11 | Client apna IP nahi de raha | Replica set ka port 27017 poore internet ke liye kholna padega | Pehle egress IP maango; na mile to client certificate (mutual TLS) lagao | P0 |
+| S-12 | Replica set ka port 22 setup ke dauraan sabke liye khula | Brute force | Setup ke baad sirf admin ke IP `/32` | P0 |
 
 ---
 
@@ -196,3 +220,4 @@ Abhi panel me saare accounts ke same rights hain. Admin ka kaam server CLI se ho
 | Version | Date | Badlav |
 |---|---|---|
 | 1.0 | 10 Oct 2026 | Pehla draft |
+| 1.1 | 14 Oct 2026 | MongoDB replica set (live data): roles, access matrix, servers table ka naya column, Section 8A, secrets, gaps S-11 aur S-12 |

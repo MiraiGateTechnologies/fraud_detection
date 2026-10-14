@@ -4,8 +4,8 @@
 | Item | Detail |
 |---|---|
 | Document | Roles aur Responsibilities (RACI) |
-| Version | 1.0 (review ke liye draft) |
-| Date | 10 Oct 2026 |
+| Version | 1.1 (review ke liye draft) |
+| Date | 14 Oct 2026 |
 | Organisation | MiraiGate Technologies |
 | Related documents | Saare documents is RACI ke hisaab se owners lete hain |
 
@@ -53,6 +53,8 @@ Har role ke naam sign-off pe Section 4 me bhare jayenge.
 | Data quality checks aur quarantine | I | | | | | **A** | R | C |
 | Data gaps band karna (bet time, IP, status codes) | **A/R** | C | | | | C | I | |
 | Agent remarks ki quality (tay list) | C | **A** | R | | | C | | |
+| Live data replica set me likhna (driver, retry, fixed `_id`) | **A/R** | I | | | | I | I | C |
+| Egress IP, teen collections ka schema aur volume dena | **A/R** | C | | | | C | C | I |
 
 ### 3.2 Labels aur Review
 | Kaam | PLT | CRL | LRV | RV | CMP | MDL | MDT | MAD |
@@ -82,6 +84,7 @@ Har role ke naam sign-off pe Section 4 me bhare jayenge.
 |---|---|---|---|---|---|---|---|---|
 | Panel server chalana aur updates | | I | I | | | C | | **A/R** |
 | Ingest server chalana | C | | | | | C | | **A/R** |
+| MongoDB replica set chalana (failover, patching, snapshots, monitoring) | I | I | | | | C | | **A/R** |
 | Backups aur restore test | | I | | | | I | | **A/R** |
 | AWS account, kharcha | | **A** | | | | C | | R |
 | Domain, DNS, HTTPS proxy | C | **A** | | | | | | R |
@@ -105,6 +108,7 @@ Har role ke naam sign-off pe Section 4 me bhare jayenge.
 | Retention aur deletion | | I | | | **A** | R | R | R |
 | Breach ki khabar authorities aur users ko | | C | | | **A/R** | C | | C |
 | AML reporting (agar lagu) | | C | | | **A/R** | C | | |
+| Live data Singapore me rakhne ki approval (cross-border) | | C | | | **A/R** | C | | I |
 
 ### 3.7 Incidents aur Communication
 | Kaam | PLT | CRL | LRV | RV | CMP | MDL | MDT | MAD |
@@ -138,3 +142,4 @@ Har 6 mahine, ya jab koi role badle.
 | Version | Date | Badlav |
 |---|---|---|
 | 1.0 | 10 Oct 2026 | Pehla draft |
+| 1.1 | 14 Oct 2026 | MongoDB replica set ke kaam: platform ka likhna aur IP/schema dena, MiraiGate ka replica set chalana, cross-border approval |

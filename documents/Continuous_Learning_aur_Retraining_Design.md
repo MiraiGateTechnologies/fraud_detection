@@ -8,10 +8,10 @@
 | ----------------- | -------------------------------------------------------------------------------------------------- |
 | Document          | Continuous Learning aur Retraining Design                                                          |
 | System            | Fraud Detection Platform (withdrawal risk scoring aur Fraud Review panel)                          |
-| Version           | 0.2 (Hinglish version, review ke liye draft)                                                       |
+| Version           | 0.3 (Hinglish version, review ke liye draft)                                                       |
 | Organisation      | MiraiGate Technologies                                                                             |
 | Audience          | Engineering, operations, risk team aur client stakeholders                                         |
-| Related documents | System SRS; Labeling aur Ground-Truth Policy; Monitoring aur Drift Plan; Service Levels aur Timing |
+| Related documents | System SRS; MongoDB Replica Set SRS; Labeling aur Ground-Truth Policy; Monitoring aur Drift Plan; Service Levels aur Timing |
 
 ---
 
@@ -34,7 +34,7 @@ Panel me aane wale reviewer decisions abhi training me use nahi hote.
 
 **Target me chaar nateeje:**
 
-1. **Roz naye scores.** Naye withdrawal requests ingest service se uthaye jaate hain aur current model se 24 ghante ke andar score hote hain, bina retrain ke.
+1. **Roz naye scores.** Naye withdrawal requests MongoDB replica set (live data) se padhe jaate hain aur current model se 24 ghante ke andar score hote hain, bina retrain ke.
 2. **Har hafte seekhna.** Models har hafte retrain hote hain, ya pehle bhi jab 25 ya zyada naye reviewer decisions aa jayein. Reviewer decisions sabse upar ki priority wale labels hain.
 3. **Surakshit release.** Naya model tabhi lagta hai jab production model ke saamne tay quality gates pass kare. Warna current model chalta rehta hai aur team ko alert jaata hai.
 4. **Poori traceability.** Har label, run aur model version record hota hai, aur koi bhi release ek step me wapas liya ja sakta hai.
@@ -100,8 +100,8 @@ Do inputs ek pipeline me jaate hain: platform se naye risk events aur panel se r
 
 ```mermaid
 flowchart LR
-    P[Client platform] -->|POST /ingest| I[Ingest service + MongoDB]
-    I -->|roz pull, read-only| R[(Object storage: raw/)]
+    P[Client platform] -->|MongoDB driver, har ~10 s| I[(MongoDB replica set: live data)]
+    I -->|roz padhna, read-only user| R[(Object storage: raw/)]
     PN[Review panel] -->|23:30 IST export| FB[(feedback/)]
     R --> RUN[Pipeline runner<br/>training instance]
     FB --> RUN
@@ -120,7 +120,8 @@ Daily run scoring ke baad rukta hai aur current models se naya data publish kart
 
 | Component            | Kaam                                                           | Status   |
 | -------------------- | -------------------------------------------------------------- | -------- |
-| Ingest service       | Platform se flagged withdrawals leti hai                       | Bana hua |
+| MongoDB replica set  | Platform saare withdrawals seedha likhta hai; 2 data servers + arbiter, Singapore | Ban raha hai |
+| Ingest service       | Temporary: platform se flagged withdrawals leti hai; kuch time saath chalegi | Bana hua |
 | Review panel         | Reviewer decisions, pattern answers, notes; scores dikhata hai | Bana hua |
 | Object storage       | Raw data, feedback, features, datasets, models, releases       | Naya     |
 | Pipeline runner      | Training instance pe stages order me chalata hai               | Naya     |
@@ -131,10 +132,10 @@ Daily run scoring ke baad rukta hai aur current models se naya data publish kart
 
 ## 6. Stage 1: Data Ingestion
 
-Naye risk events roz ingest service se uthaye jaate hain aur ek hi baar, date ke hisaab se rakhe jaate hain. Koi run poori history dobara nahi padhta.
+Naye risk events roz MongoDB replica set se padhe jaate hain aur ek hi baar, date ke hisaab se rakhe jaate hain. Koi run poori history dobara nahi padhta.
 
-- **Source:** platform har flagged withdrawal, user ke bets aur statements ke saath, ingest service ko bhejta hai (`POST /ingest`). Wo MongoDB me rakhti hai.
-- **Extract:** roz ek job ingest service ke read-only export endpoint ko bulaata hai. Wo pichhle safal watermark ke baad bane ya badle records maangta hai. Records ka asli `_id`, status, remarks, locks aur poora activity bundle saath rehta hai.
+- **Source:** platform har withdrawal request, user ke bets aur statements ke saath, seedha hamare MongoDB replica set me likhta hai (database `fraud`; collections `surveillance`, `bets`, `statements`; har ~10 second). Temporary ingest service (`POST /ingest`) kuch time saath chalegi.
+- **Extract:** roz ek job replica set ke secondary se (`fraud_reader`, sirf padhna, `secondaryPreferred`) pichhle safal watermark ke baad bane ya badle records padhti hai. Records ka asli `_id` aur poora activity bundle saath rehta hai. Live data me agent ke faisle (status, remarks, locks) nahi aate; wo sirf temporary source ke records me hain. Replica set me data 60 din rehta hai, isliye job us se pehle padh leti hai.
 - **Land:** har extract object storage me compressed file ke roop me `raw/date=YYYY-MM-DD/` ke neeche likha jaata hai. Files kabhi edit nahi hoti; sudhaar same record ke naye version ke roop me aata hai.
 - **Deduplicate:** har `_id` ka sabse naya version jeetta hai. Status ka badlav (jaise approved se rejected) history me rehta hai, kyunki label agent ke aakhri nateeje se banta hai.
 - **Validate:** job ye check karti hai:
@@ -417,29 +418,30 @@ Har component ko sirf utna access milta hai jitna zaroori hai. Client data compa
 
 - Object storage at rest encrypted, versioning chalu, public access band. Access instance roles se, rakhi hui keys se nahi.
 - Training instance pe koi inbound connection nahi. Scheduler use chalu karta hai aur run ke baad wo band ho jaata hai.
-- Ingest service ka database andar hi rehta hai. Intake job alag read-only export token use karti hai, jo har 90 din badalta hai.
+- Replica set pe TLS, authentication aur IP allowlist hai. Intake job `fraud_reader` (sirf padhna) use karti hai; uska password Secrets Manager me hai aur har 90 din badalta hai. Temporary ingest service ka database andar hi rehta hai.
 - Panel sign-in, ek account ek browser, aur sign-in limits waise hi rahenge. Admin actions ke liye admin role chahiye.
 
 **Audit:** decision history, pattern-answer history, run manifests, label snapshots, registry entries aur rollbacks system ki poori umar rakhe jaate hain. Har ek me kisne, kya aur kab.
 
-**Retention (proposal):** raw exports 12 mahine, feature tables aur training sets 24 mahine, run reports aur registry hamesha. Aakhri periods Open decision hain (Section 20).
+**Retention (proposal):** live data replica set me 60 din (TTL), raw exports 12 mahine, feature tables aur training sets 24 mahine, run reports aur registry hamesha. Aakhri periods Open decision hain (Section 20).
 
 ---
 
 ## 17. Infrastructure aur Cost Estimate
 
-Automation aaj ke setup pe lagbhag **USD 15 se 25 mahina** jodta hai, kyunki training wala instance sirf run ke time chalu hota hai.
+Automation aaj ke setup pe lagbhag **USD 15 se 25 mahina** jodta hai, kyunki training wala instance sirf run ke time chalu hota hai. Live data ka MongoDB replica set alag hai, lagbhag USD 260 mahina (MongoDB Replica Set SRS, Section 13).
 
 | Component            | Proposed resource                                 | Use                             | Lagbhag mahine ka kharcha |
 | -------------------- | ------------------------------------------------- | ------------------------------- | ------------------------- |
 | Review panel         | Maujooda EC2 t3.medium, 40 GB gp3                 | Hamesha chalu                   | Pehle se hai              |
-| Ingest service       | Maujooda EC2 + MongoDB                            | Hamesha chalu                   | Pehle se hai              |
+| Live data store      | MongoDB replica set: 2 × r7g.large (200 GB) + t4g.small arbiter, Singapore | Hamesha chalu | USD ~260 (alag; MongoDB Replica Set SRS) |
+| Ingest service       | Maujooda EC2 + MongoDB (temporary)                | Hamesha chalu, kuch time        | Pehle se hai              |
 | Training aur scoring | EC2 m6i.xlarge (4 vCPU, 16 GB), schedule pe chalu | Roz ~30 min, hafte me ~1 ghanta | USD 5 se 8                |
 | Object storage       | S3, encrypted, versioned                          | Har mahine ~30 GB badhta hai    | USD 2 se 10, badhta hua   |
 | Scheduling aur logs  | EventBridge Scheduler, CloudWatch Logs aur alarms | Roz aur weekly triggers         | USD 5 se kam              |
 | Notifications        | Email (SES) ya chat webhook                       | Din me kuch messages            | USD 1 se kam              |
 
-Kharche Mumbai region ki list prices pe andaze hain, tax ke bina. Sign-off se pehle AWS pricing calculator me confirm karne hain. Spot instances training ka kharcha aur kam kar sakte hain; spot run beech me ruke to on-demand pe apne aap retry hoga.
+Kharche Mumbai region ki list prices pe andaze hain, tax ke bina (replica set Singapore me hai; uska kharcha uski SRS me). Sign-off se pehle AWS pricing calculator me confirm karne hain. Spot instances training ka kharcha aur kam kar sakte hain; spot run beech me ruke to on-demand pe apne aap retry hoga.
 
 ---
 
@@ -499,10 +501,10 @@ Design neeche ke proposals use karta hai. Phase 2 shuru hone se pehle har ek ka 
 | Retrain kab                              | Har hafte, aur 25 naye decisions pe pehle                                                 | Sirf weekly, ya har raat                     |
 | Training kahan chale                     | Alag instance, sirf run ke time chalu                                                     | Panel server, ya analyst ka workstation      |
 | Naye model ka release                    | Saare gates pass hon to apne aap; admin rollback kar sakta hai                            | Har release se pehle panel me admin approval |
-| Data intake                              | Ingest service se roz pull                                                                | Manual JSON export                           |
+| Data intake                              | MongoDB replica set (live data) se roz padhna                                             | Temporary ingest service / manual JSON export |
 | Training fraud examples ka minimum score | Tay karna hai: aaj ye cases aur same users ki baad ki requests kam se kam 95% dikhti hain | Sirf model ka apna score dikhana             |
 | Spot-check sample                        | Hafte me 20 random low-score requests                                                     | Doosra size, ya nahi                         |
-| Data retention                           | Raw 12 mahine, features 24 mahine, reports hamesha                                        | Client ki policy ke periods                  |
+| Data retention                           | Live data 60 din (replica set); raw exports 12 mahine; features 24 mahine; reports hamesha | Client ki policy ke periods                  |
 | Notification channel                     | Operations group ko email                                                                 | Chat channel                                 |
 | Approvers                                | Client ka ek lead reviewer aur MiraiGate ka ek admin                                      | Naamon ki list                               |
 
@@ -512,7 +514,7 @@ Design neeche ke proposals use karta hai. Phase 2 shuru hone se pehle har ek ka 
 
 | Shabd             | Matlab                                                                                                                           |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Risk event        | Platform ki flag ki hui withdrawal request, user ke bets aur statements ke saath                                                 |
+| Risk event        | Platform ki withdrawal request, user ke bets aur statements ke saath (temporary source me sirf flag ki hui)                      |
 | Review panel      | Web application jahan client reviewers flagged players check karke decisions dete hain                                           |
 | Decision          | Reviewer ka player pe Fraud ya Not fraud faisla, reason ke saath                                                                 |
 | Pattern answer    | Reviewer ka Yes, No ya Other jawab ki known pattern request pe fit hai ya nahi                                                   |
@@ -526,3 +528,12 @@ Design neeche ke proposals use karta hai. Phase 2 shuru hone se pehle har ek ka 
 | Model registry    | Release hue models aur unke saboot ka versioned, read-only store                                                                 |
 | Release           | Models aur panel data ka versioned package jis pe panel switch karta hai                                                         |
 | Watermark         | Wo time jahan tak data safalta se ingest ho chuka                                                                                |
+
+---
+
+## 22. Change Log
+
+| Version | Date        | Badlav                                                                                                                      |
+| ------- | ----------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 0.2     | 10 Oct 2026 | Hinglish version                                                                                                            |
+| 0.3     | 14 Oct 2026 | Data intake ab MongoDB replica set (live data) se: target architecture, Stage 1, security controls, retention, cost, Section 20 |
